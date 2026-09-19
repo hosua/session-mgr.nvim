@@ -10,8 +10,16 @@ local validate = require "session-mgr.validate"
 local M = {}
 local TITLE = "session-mgr"
 
+--- Messages go to a corner toast when there is a UI to draw it on, else to
+--- vim.notify (headless, or toast = false). Warnings and errors always show.
 local function notify(msg, level)
-  if config.get().notify or (level or 0) >= vim.log.levels.WARN then
+  local cfg = config.get()
+  if not (cfg.notify or (level or 0) >= vim.log.levels.WARN) then
+    return
+  end
+  if cfg.toast and #vim.api.nvim_list_uis() > 0 then
+    require("session-mgr.ui.toast").show(msg, level)
+  else
     vim.notify(msg, level or vim.log.levels.INFO, { title = TITLE })
   end
 end

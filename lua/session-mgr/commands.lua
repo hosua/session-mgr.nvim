@@ -23,14 +23,7 @@ M.subcommands = {
     if bang or #args > 0 then
       return sm.save(table.concat(args, " "))
     end
-    vim.ui.input(
-      { prompt = "Save session as (.vim): ", default = sm.active() and sm.active().name or "" },
-      function(name)
-        if name and name ~= "" then
-          sm.save(name)
-        end
-      end
-    )
+    require("session-mgr.ui.save_prompt").open()
   end,
   load = function(args, bang)
     local sm = require "session-mgr"

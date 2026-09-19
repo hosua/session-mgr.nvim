@@ -1,0 +1,66 @@
+local F = require "fixture_rows"
+local sm = require "session-mgr.ui.save_model"
+
+local function new(text)
+  return sm.new { rows = F.rows_a(), text = text, default_name = "default", height = 3 }
+end
+local function names(state)
+  return vim.tbl_map(function(c)
+    return c.item.name
+  end, sm.candidates(state))
+end
+
+describe("save_model", function()
+  it("lists default first then A-Z, and a pre-filled name does not narrow", function()
+    eq({ "default", "abc", "cool", "cooli", "coolio" }, names(new "coolio"))
+  end)
+  it("typing narrows by fuzzy match, best first", function()
+    eq({ "cool", "cooli", "coolio" }, names(sm.reduce(new(), { type = "type", text = "coo" })))
+  end)
+  it("Tab cycles the text through the matches WITHOUT narrowing further, and wraps", function()
+    local s = sm.reduce(new(), { type = "type", text = "coo" })
+    s = sm.reduce(s, { type = "cycle", delta = 1 })
+    eq({ "cool", "coo", 3 }, { s.text, s.query, #names(s) })
+    s = sm.reduce(sm.reduce(s, { type = "cycle", delta = 1 }), { type = "cycle", delta = 1 })
+    eq("coolio", s.text)
+    eq("cool", sm.reduce(s, { type = "cycle", delta = 1 }).text)
+  end)
+  it("S-Tab from nothing selected goes to the last match", function()
+    eq("coolio", sm.reduce(new(), { type = "cycle", delta = -1 }).text)
+  end)
+  it("typing after cycling makes the text the new query", function()
+    local s = sm.reduce(sm.reduce(new(), { type = "cycle", delta = 1 }), { type = "type", text = "ab" })
+    eq({ "ab", 0 }, { s.query, s.index })
+    eq({ "abc" }, names(s))
+  end)
+  it("cycling with no matches is a no-op", function()
+    local s = sm.reduce(new(), { type = "type", text = "zzz" })
+    eq("zzz", sm.reduce(s, { type = "cycle", delta = 1 }).text)
+  end)
+  it("knows when the text would overwrite, ignoring a typed .vim and spaces", function()
+    eq("cool", sm.existing(new " cool.vim ").name)
+    eq(nil, sm.existing(new "coo"))
+  end)
+  it("renders a scrolling window around the selection, with status", function()
+    local s = new()
+    for _ = 1, 5 do
+      s = sm.reduce(s, { type = "cycle", delta = 1 })
+    end
+    local out = sm.render(s, F.NOW, 50)
+    eq(3, #out.lines)
+    ok(out.lines[3]:find "▌ coolio", out.lines[3])
+    eq("SessionMgrCursorLine", out.line_hl[2])
+    eq(" overwrites ", out.status[1][1])
+    for _, l in ipairs(out.lines) do
+      ok(vim.fn.strdisplaywidth(l) <= 50, l)
+    end
+  end)
+  it("explains an empty project and an unmatched query", function()
+    local empty = sm.render(sm.new { rows = {}, default_name = "default" }, F.NOW, 50)
+    ok(empty.lines[1]:find "no sessions saved", empty.lines[1])
+    eq(" type a name ", empty.status[1][1])
+    local none = sm.render(sm.reduce(new(), { type = "type", text = "zzz" }), F.NOW, 60)
+    ok(none.lines[1]:find "new one", none.lines[1])
+    eq(" new session ", none.status[1][1])
+  end)
+end)

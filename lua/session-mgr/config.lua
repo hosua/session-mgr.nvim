@@ -68,7 +68,11 @@ M.defaults = {
   },
   -- true: install <leader>ss / sl / sa / sS / sL.
   keymaps = false,
+  -- false silences success messages; warnings and errors always show.
   notify = true,
+  -- true: messages appear in a small self-closing float (top right) instead of
+  -- vim.notify, whose two-line save message would stop at "Press ENTER".
+  toast = true,
 }
 
 local SORT_KEYS = { name = true, uses = true, last_used = true, updated = true, created = true }
