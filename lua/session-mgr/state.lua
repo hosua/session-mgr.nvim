@@ -5,15 +5,25 @@ local M = {}
 
 --- @type { key: string, name: string }|nil
 local active
+--- The whole project of the active session, for autosave. @type SessionMgrProject|nil
+local active_project
 
 --- @param project SessionMgrProject
 --- @param name string
 function M.set_active(project, name)
   active = { key = project.key, name = name }
+  active_project = vim.deepcopy(project)
 end
 
 function M.clear()
-  active = nil
+  active, active_project = nil, nil
+end
+
+--- @return SessionMgrProject|nil project, string|nil name
+function M.active_target()
+  if active then
+    return vim.deepcopy(active_project), active.name
+  end
 end
 
 --- @return { key: string, name: string }|nil

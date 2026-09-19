@@ -80,8 +80,9 @@ end
 
 --- @param project SessionMgrProject
 --- @param raw_name string
+--- @param opts { silent: boolean|nil }|nil silent: no success message (autosave)
 --- @return boolean ok, string|nil err
-function M.save(project, raw_name)
+function M.save(project, raw_name, opts)
   local cfg = config.get()
   local name, err = validate.name(raw_name)
   if not name then
@@ -118,8 +119,22 @@ function M.save(project, raw_name)
   end
   state.set_active(project, name)
   emit("post_save", ctx)
-  notify(("Saved %s\n%s"):format(vim.fn.fnamemodify(file, ":~"), reload_hint(name)))
+  if not (opts and opts.silent) then
+    notify(("Saved %s\n%s"):format(vim.fn.fnamemodify(file, ":~"), reload_hint(name)))
+  end
   return true
+end
+
+--- Re-save the ACTIVE session if `autosave` is on. Never creates a session:
+--- with nothing active, or with the file gone, it does nothing.
+--- @return boolean saved
+function M.autosave()
+  local cfg = config.get()
+  local project, name = state.active_target()
+  if not (cfg.autosave and project and name) or not store.exists(cfg.root, project.key, name) then
+    return false
+  end
+  return (M.save(project, name, { silent = true }))
 end
 
 --- Source `file`, after proving it lives under the sessions root: a session
@@ -148,6 +163,11 @@ function M.load(project, name, on_done)
   local ctx = { project = project, name = name, file = file }
 
   local function go()
+    -- Switching away: keep the session being left up to date first. Skipped
+    -- when reloading the active session itself, which would defeat "load".
+    if not (state.active_in(project) == name) then
+      M.autosave()
+    end
     emit("pre_load", ctx)
     if cfg.load.replace then
       vim.cmd "silent! %bwipeout!"

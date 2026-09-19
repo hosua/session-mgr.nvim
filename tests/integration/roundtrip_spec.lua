@@ -246,3 +246,55 @@ describe(":checkhealth session-mgr", function()
     vim.cmd "silent! %bwipeout!"
   end)
 end)
+
+describe("autosave", function()
+  local session = require "session-mgr.session"
+  local function setup(autosave)
+    workspace()
+    local root = tmpdir()
+    require("session-mgr").setup { root = root, autosave = autosave }
+    vim.cmd "edit a.txt"
+    sm.save "one"
+    sm.save "two"
+    return root
+  end
+  local function files_in(root, name)
+    return require("session-mgr.sessfile").parse(paths.session_file(root, project.detect().key, name)).files
+  end
+
+  it("re-saves the session being left when switching", function()
+    local root = setup(true)
+    vim.cmd "edit b.txt" -- active is "two"; it has only a.txt on disk
+    sm.load "one"
+    ok(vim.tbl_contains(files_in(root, "two"), "b.txt"), vim.inspect(files_in(root, "two")))
+  end)
+
+  it("does not re-save when reloading the active session itself", function()
+    local root = setup(true)
+    vim.cmd "edit b.txt"
+    sm.load "two"
+    ok(not vim.tbl_contains(files_in(root, "two"), "b.txt"))
+  end)
+
+  it("VimLeavePre saves the active session, silently", function()
+    local root = setup(true)
+    vim.cmd "edit c.txt"
+    msgs = {}
+    vim.api.nvim_exec_autocmds("VimLeavePre", {})
+    ok(vim.tbl_contains(files_in(root, "two"), "c.txt"))
+    eq({}, msgs)
+  end)
+
+  it("is off by default, and never creates a session", function()
+    local root = setup(false)
+    vim.cmd "edit b.txt"
+    eq(false, session.autosave())
+    eq(0, #vim.api.nvim_get_autocmds { group = "session-mgr", event = "VimLeavePre" })
+    require("session-mgr").setup { root = root, autosave = true }
+    require("session-mgr.state").clear()
+    eq(false, session.autosave()) -- nothing active
+    sm.save "three"
+    sm.delete "three"
+    eq(false, session.autosave()) -- active cleared by delete
+  end)
+end)
