@@ -62,24 +62,24 @@ describe("model ordering", function()
 end)
 
 describe("model grouping", function()
-  it("groups by project A-Z (case-insensitive), numbering per group, default first in each", function()
+  it("groups by project A-Z (case-insensitive), numbering continues across groups, default first in each", function()
     eq({
       "[Notes]",
       "1:default",
       "[repo-a]",
-      "1:default",
-      "2:abc",
-      "3:cool",
-      "4:cooli",
-      "5:coolio",
+      "2:default",
+      "3:abc",
+      "4:cool",
+      "5:cooli",
+      "6:coolio",
       "[repo-b]",
-      "1:cool",
-      "2:cooli",
+      "7:cool",
+      "8:cooli",
     }, names(all_state()))
   end)
   it("sorts within groups and leaves the group order alone", function()
     local got = names(act(all_state(), { type = "set_sort", key = "uses" }))
-    eq({ "[repo-b]", "1:cool", "2:cooli" }, vim.list_slice(got, 9, 11))
+    eq({ "[repo-b]", "7:cool", "8:cooli" }, vim.list_slice(got, 9, 11))
     eq("[Notes]", got[1])
   end)
   it("flattens under a filter, tags rows with their project, allows duplicate names", function()

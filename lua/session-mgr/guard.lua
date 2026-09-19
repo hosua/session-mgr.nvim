@@ -35,27 +35,39 @@ function M.is_clean(loss)
   return #loss.modified == 0 and #loss.unnamed == 0 and #loss.terminals == 0
 end
 
---- Ask what to do. Calls back with "write", "discard" or nil (cancel).
---- Replaced by a float in ui/confirm; kept as a function field so tests can stub it.
+--- Ask what to do, in a float. Calls back with "write", "discard" or nil
+--- (cancel). A function field so tests can stub it.
 --- @param loss SessionMgrLoss
 --- @param cb fun(choice: "write"|"discard"|nil)
 function M.ask(loss, cb)
   local lines = {}
   for _, b in ipairs(loss.modified) do
-    lines[#lines + 1] = "  modified   " .. b.name
+    lines[#lines + 1] = { { "  M  ", "SessionMgrWarn" }, { b.name } }
   end
   for _, b in ipairs(loss.unnamed) do
-    lines[#lines + 1] = "  modified   [No Name] (cannot be written)"
+    lines[#lines + 1] =
+      { { "  M  ", "SessionMgrWarn" }, { b.name }, { "  has no file name, cannot be written", "SessionMgrDim" } }
   end
   for _, b in ipairs(loss.terminals) do
-    lines[#lines + 1] = "  terminal   " .. b.name .. " (job will be killed)"
+    lines[#lines + 1] =
+      { { "  T  ", "SessionMgrDanger" }, { b.name }, { "  running job will be killed", "SessionMgrDim" } }
   end
-  local can_write = #loss.unnamed == 0 and #loss.modified > 0
-  local prompt = "Loading replaces every buffer:\n" .. table.concat(lines, "\n")
-  local choices = can_write and "&Write all and load\n&Discard and load\n&Cancel" or "&Discard and load\n&Cancel"
-  local n = vim.fn.confirm(prompt, choices, can_write and 3 or 2, "Warning")
-  local map = can_write and { "write", "discard" } or { "discard" }
-  cb(map[n])
+  local choices = {}
+  -- "write all" is only offered when it would actually save everything.
+  if #loss.modified > 0 and #loss.unnamed == 0 then
+    choices[#choices + 1] = { key = "w", label = "write all & load", value = "write" }
+  end
+  choices[#choices + 1] = { key = "d", label = "discard & load", value = "discard", danger = true }
+  local n = #loss.modified + #loss.unnamed
+  local title = n > 0 and ("%d unsaved buffer%s"):format(n, n == 1 and "" or "s")
+    or ("%d running terminal%s"):format(#loss.terminals, #loss.terminals == 1 and "" or "s")
+  require("session-mgr.ui.confirm").open {
+    title = title,
+    danger = true,
+    lines = lines,
+    choices = choices,
+    on_choice = cb,
+  }
 end
 
 return M

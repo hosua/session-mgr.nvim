@@ -16,19 +16,6 @@ local function report(ok, err, done)
   end
 end
 
---- Interim chooser until the picker float exists.
-local function choose(prompt, on_choice)
-  local names = require("session-mgr").names()
-  if #names == 0 then
-    return notify("No sessions for this project yet. Save one with :SessionMgr save", vim.log.levels.WARN)
-  end
-  vim.ui.select(names, { prompt = prompt }, function(choice)
-    if choice then
-      on_choice(choice)
-    end
-  end)
-end
-
 --- @type table<string, fun(args: string[], bang: boolean)>
 M.subcommands = {
   save = function(args, bang)
@@ -50,10 +37,10 @@ M.subcommands = {
     if bang or #args > 0 then
       return sm.load(table.concat(args, " "))
     end
-    choose("Load session", sm.load)
+    require("session-mgr.ui.picker").open "project"
   end,
   all = function()
-    notify("The all-projects picker is not built yet", vim.log.levels.WARN)
+    require("session-mgr.ui.picker").open "all"
   end,
   delete = function(args)
     if #args ~= 1 then

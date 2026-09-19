@@ -26,12 +26,12 @@ describe("render project view", function()
   it("golden", function()
     eq(
       {
-        "  This project   All projects                                5 sessions",
+        "  This project   All projects                                   5 sessions",
         " / type / to filter by name",
         "    #  Name ▲     Uses  Last used         Updated           Created",
-        "▌   1  default     125  5min 57s ago      1hr ago           2026-08-10",
-        "    2  abc           2  1min ago          2026-09-18 11:00  2026-09-16",
-        "    3  cool         42  2026-09-11 12:00  6hr ago           2026-08-20",
+        "▌   1  default     125  5m 57s ago        1h ago            2026-08-10",
+        "    2  abc           2  1m ago            2026-09-18 11:00  2026-09-16",
+        "    3  cool         42  2026-09-11 12:00  6h ago            2026-08-20",
         "    4  cooli         0  Never             2026-09-05 12:00  2026-09-05",
         "  ● 5  coolio        7  Just now          Just now          2026-09-17",
       },
@@ -138,8 +138,17 @@ describe("render edge cases", function()
       { key = "%n", root = "/home/me/path/to/a/really/long/nested/place/projectA", label = "projectA", is_git = false }
     local out = render.render(model.new { project = p, rows = {} }, F.NOW, OPTS)
     ok(out.title:find("…/projectA", 1, true), out.title)
-    ok(out.footer[#out.footer][1]:find "not a git repo", out.footer[#out.footer][1])
-    eq("SessionMgrWarn", out.footer[#out.footer][2])
+    eq(2, out.chrome_bottom)
+    ok(out.lines[#out.lines]:find "not a git repo", out.lines[#out.lines])
+    eq(0, render.render(project_state(), F.NOW, OPTS).chrome_bottom)
+  end)
+  it("is never narrower than its own footer", function()
+    local out = render.render(model.new { project = F.project_a, rows = {} }, F.NOW, OPTS)
+    local w = 2
+    for _, c in ipairs(out.footer) do
+      w = w + vim.fn.strdisplaywidth(c[1])
+    end
+    ok(out.width >= w, ("width %d < footer %d"):format(out.width, w))
   end)
   it("footer switches to filter keys while the filter has focus", function()
     local out = render.render(model.reduce(project_state(), { type = "focus_filter", focused = true }), F.NOW, OPTS)

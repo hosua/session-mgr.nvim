@@ -2,7 +2,7 @@
 ---
 ---   < 1 min      Just now
 ---   < 1 day      largest unit + the next one down, dropped when zero:
----                5min 57s ago, 1hr 5min ago, 1hr ago   (seconds only under an hour)
+---                5m 57s ago, 1h 5m ago, 1h ago   (seconds only under an hour)
 ---   >= 1 day     2026-09-19 07:59 (local time)
 local M = {}
 
@@ -21,11 +21,11 @@ function M.relative(now, ts)
   end
   if d < HOUR then
     local m, s = math.floor(d / MIN), d % MIN
-    return s > 0 and ("%dmin %ds ago"):format(m, s) or ("%dmin ago"):format(m)
+    return s > 0 and ("%dm %ds ago"):format(m, s) or ("%dm ago"):format(m)
   end
   if d < DAY then
     local h, m = math.floor(d / HOUR), math.floor(d % HOUR / MIN)
-    return m > 0 and ("%dhr %dmin ago"):format(h, m) or ("%dhr ago"):format(h)
+    return m > 0 and ("%dh %dm ago"):format(h, m) or ("%dh ago"):format(h)
   end
   -- A day or older: the exact local time says more than "3 days ago".
   return M.datetime(ts)

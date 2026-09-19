@@ -76,7 +76,7 @@ end
 --- @class SessionMgrItem
 --- @field kind "group"|"row"
 --- @field row SessionMgrRow|nil
---- @field index integer|nil number shown in the # column (per group)
+--- @field index integer|nil number shown in the # column (continuous across groups)
 --- @field selectable integer|nil position among the selectable rows
 --- @field positions integer[]|nil matched byte positions in the name
 --- @field show_project boolean|nil flat all-projects list: print the project after the name
@@ -97,10 +97,11 @@ function M.visible(state)
 
   local items, n = {}, 0
   local function push_rows(list, show_project)
-    for i, m in ipairs(list) do
+    for _, m in ipairs(list) do
       n = n + 1
+      -- Numbering runs on across groups, so # is always a valid {count}G target.
       items[#items + 1] =
-        { kind = "row", row = m.row, index = i, selectable = n, positions = m.positions, show_project = show_project }
+        { kind = "row", row = m.row, index = n, selectable = n, positions = m.positions, show_project = show_project }
     end
   end
   local function sorted(list, pin)

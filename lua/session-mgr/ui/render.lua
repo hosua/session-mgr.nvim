@@ -112,7 +112,13 @@ function M.render(state, now, opts)
   for _, c in ipairs(COLUMNS) do
     content = content + w[c.key] + #GAP
   end
-  content = math.max(content, opts.min_width or 0)
+  -- The footer lives in the border: a window narrower than it would clip it.
+  local footer = M.footer(state, opts)
+  local footer_w = 2
+  for _, chunk in ipairs(footer) do
+    footer_w = footer_w + width(chunk[1])
+  end
+  content = math.max(content, footer_w, opts.min_width or 0)
 
   -- Row 0: scope tabs, with the match count right-aligned.
   local tabs = Line(0, out)
@@ -224,10 +230,23 @@ function M.render(state, now, opts)
     row = row + 1
   end
 
+  -- Outside git a project is just "this folder": say so where it is read,
+  -- under the list, instead of stretching the footer.
+  out.chrome_bottom = 0
+  if not state.project.is_git and state.scope == "project" then
+    local key = opts.all_key or ":SessionMgr all"
+    Line(row, out).add("", nil).done()
+    Line(row + 1, out)
+      .add((" ! not a git repo: listed only from this folder (%s lists it anywhere)"):format(key), "SessionMgrWarn")
+      .done()
+    out.chrome_bottom = 2
+    content = math.max(content, width(out.lines[row + 2]) + 1)
+  end
+
   out.width = content
   out.list_lines = math.max(#items, #items == 0 and 2 or 0)
   out.title = M.title(state, opts)
-  out.footer = M.footer(state, opts)
+  out.footer = footer
   return out
 end
 
@@ -252,7 +271,6 @@ function M.footer(state, opts)
       { "⏎", "load" },
       { "/", "filter" },
       { "h l", "sort" },
-      { "o", "reverse" },
       { "a", state.scope == "all" and "this project" or "all projects" },
       { "r", "rename" },
       { "d", "delete" },
@@ -263,11 +281,6 @@ function M.footer(state, opts)
   for _, h in ipairs(hints) do
     chunks[#chunks + 1] = { h[1], "SessionMgrFooterKey" }
     chunks[#chunks + 1] = { " " .. h[2] .. "  ", "SessionMgrFooter" }
-  end
-  if not state.project.is_git and state.scope == "project" then
-    local key = opts and opts.all_key or ":SessionMgr all"
-    chunks[#chunks + 1] =
-      { ("not a git repo: listed here only from this folder (%s shows it anywhere) "):format(key), "SessionMgrWarn" }
   end
   return chunks
 end
