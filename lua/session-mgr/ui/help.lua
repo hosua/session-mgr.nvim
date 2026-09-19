@@ -8,7 +8,7 @@ M.SECTIONS = {
     "Move",
     {
       { "j k  ↑ ↓", "up / down" },
-      { "gg G  Home End", "first / last ({count}G jumps to a row)" },
+      { "gg G  Home End", "first / last ({count}G jumps to row #)" },
       { "^d ^u", "half a page" },
       { "PgDn PgUp", "a page" },
       { "wheel", "scroll" },
