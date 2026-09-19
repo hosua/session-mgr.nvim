@@ -6,13 +6,13 @@ describe("timefmt.relative under a day", function()
     { 0, "Just now" },
     { 59, "Just now" },
     { -30, "Just now" },
-    { 60, "1min ago" },
-    { 5 * 60 + 57, "5min 57s ago" },
-    { 59 * 60 + 59, "59min 59s ago" },
-    { 3600, "1hr ago" },
-    { 3600 + 32, "1hr ago" }, -- never "1hr 32s": no skipped units
-    { 3600 + 5 * 60, "1hr 5min ago" },
-    { 23 * 3600 + 59 * 60 + 59, "23hr 59min ago" },
+    { 60, "1m ago" },
+    { 5 * 60 + 57, "5m 57s ago" },
+    { 59 * 60 + 59, "59m 59s ago" },
+    { 3600, "1h ago" },
+    { 3600 + 32, "1h ago" }, -- never "1h 32s": no skipped units
+    { 3600 + 5 * 60, "1h 5m ago" },
+    { 23 * 3600 + 59 * 60 + 59, "23h 59m ago" },
   }
   for _, c in ipairs(cases) do
     it(("%ds -> %s"):format(c[1], c[2]), function()
@@ -34,7 +34,7 @@ end)
 describe("timefmt.relative from one day on", function()
   it("switches to the absolute local datetime at exactly 24h", function()
     eq("2026-09-18 12:00", timefmt.relative(NOW, NOW - 86400))
-    eq("23hr 59min ago", timefmt.relative(NOW, NOW - 86399))
+    eq("23h 59m ago", timefmt.relative(NOW, NOW - 86399))
   end)
   it("stays absolute for old timestamps", function()
     eq("2026-08-02 06:20", timefmt.relative(NOW, os.time { year = 2026, month = 8, day = 2, hour = 6, min = 20 }))
