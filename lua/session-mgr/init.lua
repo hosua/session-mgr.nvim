@@ -19,6 +19,16 @@ local DEFAULT_KEYS = {
 function M.setup(opts)
   local cfg = require("session-mgr.config").resolve(opts)
   migrated = false
+  local group = vim.api.nvim_create_augroup("session-mgr", { clear = true })
+  if cfg.autosave then
+    vim.api.nvim_create_autocmd("VimLeavePre", {
+      group = group,
+      desc = "session-mgr: re-save the active session",
+      callback = function()
+        require("session-mgr.session").autosave()
+      end,
+    })
+  end
   if cfg.keymaps then
     for _, k in ipairs(DEFAULT_KEYS) do
       vim.keymap.set("n", k[1], ("<cmd>SessionMgr %s<cr>"):format(k[2]), { desc = k[3] })
