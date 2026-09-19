@@ -10,7 +10,7 @@ integration:
 	  nvim --headless -u NONE -l tests/run.lua integration; rc=$$?; rm -rf $$tmp; exit $$rc
 
 smoke:
-	@for t in tests/smoke/*.sh; do [ -e "$$t" ] || continue; echo "== $$t"; bash "$$t" || exit 1; done
+	@for t in tests/smoke/*.sh; do [ -e "$$t" ] || continue; [ "$$(basename $$t)" = lib.sh ] && continue; echo "== $$t"; bash "$$t" || exit 1; done
 
 fmt:
 	stylua .
