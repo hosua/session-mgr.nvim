@@ -20,6 +20,14 @@ end
 local H = require "harness"
 _G.describe, _G.it, _G.eq, _G.ok, _G.tmpdir = H.describe, H.it, H.eq, H.ok, H.tmpdir
 
+-- Assigning to a name before its `local` declaration silently creates a
+-- global and leaves the local untouched. Nothing else catches that, so
+-- snapshot the globals and fail the run if the plugin added any.
+local known_globals = {}
+for k in pairs(_G) do
+  known_globals[k] = true
+end
+
 local dir = root .. "/tests/" .. (arg[1] or "spec")
 local specs = vim.fn.globpath(dir, "**/*_spec.lua", false, true)
 table.sort(specs)
@@ -31,6 +39,16 @@ for _, spec in ipairs(specs) do
   end
 end
 H.cleanup()
+
+for k in pairs(_G) do
+  if not known_globals[k] then
+    H.failed = H.failed + 1
+    table.insert(
+      H.failures,
+      ("leaked global %q: assigned before its `local` declaration, or a missing `local`"):format(k)
+    )
+  end
+end
 
 for _, f in ipairs(H.failures) do
   io.stdout:write("FAIL  " .. f .. "\n")
