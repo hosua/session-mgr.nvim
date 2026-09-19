@@ -8,8 +8,10 @@ local hints = require "session-mgr.hints"
 local input = require "session-mgr.ui.input"
 local layout = require "session-mgr.ui.layout"
 local model = require "session-mgr.ui.model"
+local preview = require "session-mgr.ui.preview"
 local render = require "session-mgr.ui.render"
 local session = require "session-mgr.session"
+local sessfile = require "session-mgr.sessfile"
 local state_mod = require "session-mgr.state"
 local store = require "session-mgr.store"
 
@@ -44,6 +46,7 @@ function M.close()
   if p.filter_input then
     float.close(p.filter_input)
   end
+  float.close(p.preview)
   float.close(p.float)
 end
 
@@ -59,7 +62,7 @@ local function redraw()
   local rects = layout.compute(
     { width = out.width, list_lines = out.list_lines, chrome = render.CHROME_LINES + out.chrome_bottom },
     float.editor(),
-    vim.tbl_extend("force", cfg, { preview = false })
+    vim.tbl_extend("force", cfg, { preview = cfg.preview and p.show_preview })
   )
   if rects.list_height ~= p.state.height then
     p.state = model.reduce(p.state, { type = "resize", height = rects.list_height })
@@ -68,6 +71,30 @@ local function redraw()
   float.configure(p.float, rects.list, out.title, out.footer)
   float.paint(p.float, out)
   p.out = out
+
+  -- Preview pane: beside the list when the editor is wide enough, else gone.
+  if rects.preview then
+    if not float.is_open(p.preview) then
+      p.preview = float.open { rect = rects.preview, title = "", enter = false, focusable = false, zindex = 59 }
+    end
+    local row = model.current(p.state)
+    local info, err
+    if row then
+      -- Parse each file once per picker; the timer repaints every second.
+      p.parsed[row.file] = p.parsed[row.file] or { sessfile.parse(row.file) }
+      info, err = p.parsed[row.file][1], p.parsed[row.file][2]
+    end
+    local pv = preview.build(
+      row,
+      info,
+      { width = rects.preview.width, height = rects.preview.height, home = vim.env.HOME, now = os.time(), err = err }
+    )
+    float.configure(p.preview, rects.preview, pv.title, nil)
+    float.paint(p.preview, pv)
+  elseif p.preview then
+    float.close(p.preview)
+    p.preview = nil
+  end
   if p.hover_row and out.lines[p.hover_row + 1] and p.hover_row ~= out.cursor_row then
     vim.api.nvim_buf_set_extmark(
       p.float.buf,
@@ -365,6 +392,10 @@ local function set_keymaps(buf)
   map("<CR>", load_current)
   map("r", rename_current)
   map("d", delete_current)
+  map("p", function()
+    P.show_preview = not P.show_preview
+    redraw()
+  end)
   map("?", show_help)
   map({ "q", "<Esc>" }, function()
     if P and P.state.filter ~= "" then
@@ -404,6 +435,8 @@ function M.open(scope)
       active = state_mod.active(),
     },
     augroup = vim.api.nvim_create_augroup("session-mgr-picker", { clear = true }),
+    show_preview = true,
+    parsed = {},
   }
   local p = P
   set_keymaps(f.buf)

@@ -7,7 +7,7 @@ source tests/smoke/lib.sh
 SMOKE_ROOT=$(mktemp -d); export SMOKE_ROOT
 mkdir -p "$SMOKE_ROOT/work"; echo hi >"$SMOKE_ROOT/work/a.txt"
 rc=0
-smoke_start 130 32 env SMOKE_ROOT="$SMOKE_ROOT" nvim --clean -u tests/smoke/init.lua
+smoke_start 160 32 env SMOKE_ROOT="$SMOKE_ROOT" nvim --clean -u tests/smoke/init.lua
 smoke_keys ' sl'
 smoke_expect 'Load a session for' || rc=1
 smoke_expect '▌ +1 +default' || rc=1
@@ -15,6 +15,11 @@ smoke_expect 'not a git repo: listed only from this folder \(<leader>sa' || rc=1
 smoke_expect '⏎ load  / filter' || rc=1
 smoke_keys 2
 smoke_expect 'Uses ▼' || rc=1
+smoke_expect 'default.vim' || rc=1              # preview pane title
+smoke_expect 'layout +1 tab, 1 window' || rc=1
+smoke_keys p
+smoke_reject 'layout +1 tab' || rc=1
+smoke_keys p
 smoke_keys a
 smoke_expect 'Showing your saved sessions for all projects' || rc=1
 smoke_expect 'other-repo +/srv/other-repo' || rc=1
@@ -30,6 +35,7 @@ smoke_expect 'session-mgr keys' || rc=1
 smoke_keys q
 smoke_resize 80 24
 smoke_expect 'Showing your saved sessions' || rc=1
+smoke_reject 'layout +1 tab' || rc=1         # preview gives way at 80 columns
 smoke_reject 'E[0-9]+:' || rc=1
 smoke_keys C-l; smoke_keys a; smoke_keys j; smoke_keys Enter
 smoke_expect 'Loaded abc' || rc=1

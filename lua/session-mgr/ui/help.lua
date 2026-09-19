@@ -30,6 +30,7 @@ M.SECTIONS = {
       { "⏎ / esc", "in the filter: keep / clear" },
       { "^l", "clear the filter" },
       { "a  Tab", "this project <-> all projects" },
+      { "p", "show / hide the preview pane" },
     },
   },
   { "Act", { { "⏎  double-click", "load" }, { "r", "rename" }, { "d", "delete" }, { "q  esc", "close" } } },

@@ -270,10 +270,10 @@ function M.footer(state, opts)
     hints = {
       { "⏎", "load" },
       { "/", "filter" },
-      { "h l", "sort" },
-      { "a", state.scope == "all" and "this project" or "all projects" },
+      { "a", state.scope == "all" and "project" or "all" },
       { "r", "rename" },
       { "d", "delete" },
+      { "p", "preview" },
       { "?", "help" },
     }
   end

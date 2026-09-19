@@ -26,7 +26,7 @@ describe("render project view", function()
   it("golden", function()
     eq(
       {
-        "  This project   All projects                                   5 sessions",
+        "  This project   All projects                                5 sessions",
         " / type / to filter by name",
         "    #  Name ▲     Uses  Last used         Updated           Created",
         "▌   1  default     125  5m 57s ago        1h ago            2026-08-10",

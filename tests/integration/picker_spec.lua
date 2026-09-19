@@ -192,4 +192,32 @@ describe("picker", function()
     ok(lines()[3]:find "Name", "header survives a tiny window")
     picker.close()
   end)
+  it("shows a preview beside the list on a wide editor; p toggles it; narrow hides it", function()
+    world()
+    local float = require "session-mgr.ui.float"
+    local editor = float.editor
+    float.editor = function()
+      return { width = 170, height = 40 }
+    end
+    local p = picker.open "project"
+    ok(float.is_open(p.preview), "preview opened")
+    local list, pv = vim.api.nvim_win_get_config(p.float.win), vim.api.nvim_win_get_config(p.preview.win)
+    eq(list.col + list.width + 2, pv.col)
+    eq(false, pv.focusable)
+    local text = table.concat(vim.api.nvim_buf_get_lines(p.preview.buf, 0, -1, false), "\n")
+    ok(text:find "a.txt" and text:find "1 tab, 1 window", text)
+    keys "p"
+    eq(nil, p.preview)
+    keys "p"
+    ok(float.is_open(p.preview))
+    float.editor = function()
+      return { width = 100, height = 40 }
+    end
+    vim.api.nvim_exec_autocmds("VimResized", {})
+    eq(nil, p.preview)
+    float.editor = editor
+    local win = p.float.win
+    picker.close()
+    eq(false, vim.api.nvim_win_is_valid(win))
+  end)
 end)
