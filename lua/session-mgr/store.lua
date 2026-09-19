@@ -181,6 +181,13 @@ function M.touch_saved(root, project, name, now)
   end, now)
 end
 
+--- Record an imported session with the timestamps of the file it came from.
+function M.adopt(root, project, name, ts)
+  return M.update(root, project, function(idx)
+    idx.sessions[name] = { uses = 0, created = ts, updated = ts }
+  end, ts)
+end
+
 --- Record a load.
 function M.touch_loaded(root, project, name, now)
   now = now or os.time()

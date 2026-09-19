@@ -209,3 +209,40 @@ describe(":SessionMgr", function()
     ok(msgs[#msgs]:find "does not take !", msgs[#msgs])
   end)
 end)
+
+describe("legacy migration on first use", function()
+  it("imports before the first listing and tells the user", function()
+    local dir = workspace()
+    local root = tmpdir()
+    vim.fn.writefile({ "cd " .. dir, "badd +1 a.txt", "edit a.txt" }, root .. "/" .. paths.escape(dir) .. ".vim")
+    config.resolve { root = root }
+    require("session-mgr").setup { root = root }
+    eq({ "default" }, sm.names())
+    ok(msgs[1]:find "Imported 1 legacy", msgs[1])
+    sm.load()
+    eq({ "a.txt" }, open_names())
+  end)
+
+  it("does nothing when migrate_legacy = false", function()
+    local dir = workspace()
+    local root = tmpdir()
+    vim.fn.writefile({ "cd " .. dir }, root .. "/" .. paths.escape(dir) .. ".vim")
+    require("session-mgr").setup { root = root, migrate_legacy = false }
+    eq({}, sm.names())
+  end)
+end)
+
+describe(":checkhealth session-mgr", function()
+  it("runs without error", function()
+    workspace()
+    require("session-mgr").setup { root = tmpdir() }
+    vim.cmd "edit a.txt"
+    sm.save "x"
+    local okk, err = pcall(vim.cmd, "silent checkhealth session-mgr")
+    ok(okk, tostring(err))
+    local text = table.concat(vim.api.nvim_buf_get_lines(0, 0, -1, false), "\n")
+    ok(text:find "1 session%(s%) in 1 project", text)
+    ok(not text:find "ERROR", text)
+    vim.cmd "silent! %bwipeout!"
+  end)
+end)
