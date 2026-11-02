@@ -34,7 +34,7 @@ smoke_expect 'Saved .*brand new\.vim' || rc=1
 smoke_reject 'Overwrite' || rc=1
 smoke_keys ' sS'
 smoke_expect 'Saved .*default\.vim' || rc=1   # save! never asks
-smoke_expect ':SessionMgr load!' || rc=1
+smoke_expect ':SessionMgr load default' || rc=1
 smoke_reject 'E[0-9]+:' || rc=1
 smoke_stop; rm -rf "$SMOKE_ROOT"
 exit $rc

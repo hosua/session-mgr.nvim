@@ -6,14 +6,17 @@ local M = {}
 
 -- Declared before setup(): setup resets it so a changed `root` is re-checked.
 local migrated = false
+-- Autoload is a startup thing: once per nvim, however often setup() runs.
+local autoload_armed = false
 
 local DEFAULT_KEYS = {
   { "<leader>ss", "save", "session save as" },
   { "<leader>sl", "load", "session load picker" },
   { "<leader>sa", "autosave", "session autosave on/off" },
   { "<leader>sA", "all", "session picker, all projects" },
+  { "<leader>sn", "new", "session new (start empty)" },
   { "<leader>sS", "save!", "session save default" },
-  { "<leader>sL", "load!", "session load default" },
+  { "<leader>sL", "load!", "session load autosave or default" },
 }
 
 --- "300s" reads worse than "5m": whole minutes as minutes, else seconds.
@@ -49,6 +52,30 @@ function M.toggle_autosave()
   return M.set_autosave(not require("session-mgr.config").get().autosave)
 end
 
+--- Load autosave.vim once nvim has entered and a UI is attached. Waiting
+--- for VimEnter lets a start screen draw first (the load replaces it), and
+--- a headless run never gets a UI, so scripts are left alone. Its own
+--- augroup, since setup() clears "session-mgr" and would drop the wait.
+function M.arm_autoload()
+  local group = vim.api.nvim_create_augroup("session-mgr-autoload", { clear = true })
+  local function run()
+    vim.schedule(function()
+      M.ensure_migrated()
+      require("session-mgr.session").autoload()
+    end)
+  end
+  local function when_ui()
+    if #vim.api.nvim_list_uis() > 0 then
+      return run()
+    end
+    vim.api.nvim_create_autocmd("UIEnter", { group = group, once = true, callback = run })
+  end
+  if vim.v.vim_did_enter == 1 then
+    return when_ui()
+  end
+  vim.api.nvim_create_autocmd("VimEnter", { group = group, once = true, callback = when_ui })
+end
+
 --- @param opts table|nil user overrides, merged over config.defaults
 function M.setup(opts)
   local cfg = require("session-mgr.config").resolve(opts)
@@ -66,6 +93,10 @@ function M.setup(opts)
     end,
   })
   M.set_autosave(cfg.autosave, { quiet = true })
+  if cfg.autosave and not autoload_armed then
+    autoload_armed = true
+    M.arm_autoload()
+  end
   if cfg.keymaps then
     for _, k in ipairs(DEFAULT_KEYS) do
       vim.keymap.set("n", k[1], ("<cmd>SessionMgr %s<cr>"):format(k[2]), { desc = k[3] })
@@ -113,14 +144,30 @@ function M.save(name)
   return require("session-mgr.session").save(current_project(), (name and name ~= "") and name or cfg.default_name)
 end
 
---- Load the current project's session `name`; nil/"" means the default session.
+--- Load the current project's session `name`. nil/"" picks one: autosave
+--- while autosave is on and autosave.vim exists, else the default session.
 --- @param name string|nil
 --- @param on_done fun(ok: boolean)|nil
 function M.load(name, on_done)
   M.ensure_migrated()
-  local cfg = require("session-mgr.config").get()
-  local n = (name and name ~= "") and name or cfg.default_name
-  require("session-mgr.session").load(current_project(), n, on_done)
+  local session = require "session-mgr.session"
+  local project = current_project()
+  if name and name ~= "" then
+    return session.load(project, name, on_done)
+  end
+  local target, why = session.default_target(project)
+  if not target then
+    session.notify(why, vim.log.levels.WARN)
+    return (on_done or function() end)(false)
+  end
+  session.load(project, target, on_done)
+end
+
+--- Start an empty session in this project. See session.new.
+--- @param on_done fun(ok: boolean)|nil
+function M.new(on_done)
+  M.ensure_migrated()
+  require("session-mgr.session").new(on_done)
 end
 
 --- @return boolean ok, string|nil err

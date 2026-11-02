@@ -294,12 +294,9 @@ local function delete_current()
     end
     ask("Delete session?", {}, function()
       if row.name == cfg.default_name and cfg.confirm.delete_default_twice then
-        ask(
-          "Really delete the DEFAULT session?",
-          { { { "  <leader>sL / :SessionMgr load! will have nothing to load.", "SessionMgrWarn" } } },
-          really,
-          done
-        )
+        ask("Really delete the DEFAULT session?", {
+          { { "  <leader>sL / :SessionMgr load! then only finds autosave, while autosave is on.", "SessionMgrWarn" } },
+        }, really, done)
       else
         really()
       end
