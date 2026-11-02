@@ -1,0 +1,70 @@
+local F = require "fixture_procs"
+local tree = require "session-mgr.procs.tree"
+
+local function ids(nodes)
+  return vim.tbl_map(function(n)
+    return n.id
+  end, nodes)
+end
+
+describe("procs.tree.build", function()
+  it("roots are nvims without an nvim parent, orphans last", function()
+    eq({ "200", "300", "600", "orphans" }, ids(F.forest().roots))
+  end)
+  it("nests the embedded server and its LSPs", function()
+    local f = F.forest()
+    eq({ "201" }, ids(f.by_id["200"].children))
+    eq({ "210", "220" }, ids(f.by_id["201"].children))
+    eq({ "221" }, ids(f.by_id["220"].children))
+    eq(3, f.by_id["221"].depth)
+  end)
+  it("sums subtree memory", function()
+    local f = F.forest()
+    eq(9805404 + 283000 + 400000 + 917000, f.by_id["201"].tree)
+    eq(2964 + f.by_id["201"].tree, f.by_id["200"].tree)
+    eq(4, f.by_id["200"].descendants)
+  end)
+  it("groups leaked mason servers, topmost only, with their children", function()
+    local o = F.forest().by_id.orphans
+    eq({ "400" }, ids(o.children))
+    eq({ "401" }, ids(o.children[1].children))
+    eq(64000, o.tree)
+  end)
+  it("leaves orphans out when disabled", function()
+    eq(nil, F.forest({ orphans = false }).by_id.orphans)
+  end)
+  it("prefers PSS and falls back to RSS per process", function()
+    local f = F.forest({ memory = "pss" }, { pss = { [201] = 1000 } })
+    eq("pss", f.memory)
+    eq(1000, f.by_id["201"].own)
+    eq(false, f.by_id["201"].approx)
+    eq(283000, f.by_id["210"].own)
+    eq(true, f.by_id["210"].approx)
+  end)
+  it("flags every node in the tree holding our own pid", function()
+    local f = F.forest { own_pid = 201 }
+    eq(true, f.by_id["200"].own_session)
+    eq(true, f.by_id["221"].own_session)
+    eq(false, f.by_id["300"].own_session)
+  end)
+  it("computes CPU% from tick deltas, nil without history or after pid reuse", function()
+    local prev = F.sample { t = 10, stat = { [201] = { ticks = 1000, start = 5 }, [301] = { ticks = 0, start = 5 } } }
+    local f = F.forest(
+      { prev = prev },
+      { t = 12, hz = 100, stat = { [201] = { ticks = 1100, start = 5 }, [301] = { ticks = 50, start = 9 } } }
+    )
+    eq(50, f.by_id["201"].cpu)
+    eq(nil, f.by_id["301"].cpu)
+    eq(nil, f.by_id["210"].cpu)
+  end)
+  it("handles a pid that vanished between ps and /proc reads", function()
+    local f = F.forest({ memory = "pss" }, { pss = {}, cwd = { [999] = "/x" } })
+    eq(2964, f.by_id["200"].own)
+  end)
+end)
+
+describe("procs.tree.subtree_pids", function()
+  it("lists children before parents", function()
+    eq({ 210, 221, 220, 201, 200 }, tree.subtree_pids(F.forest().by_id["200"]))
+  end)
+end)
