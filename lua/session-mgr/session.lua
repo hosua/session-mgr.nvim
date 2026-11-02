@@ -73,9 +73,12 @@ local function reopen_tree()
   end
 end
 
---- The "Reload with ..." line, naming the key the user really has.
+--- The "Reload with ..." line, naming the key the user really has. load!
+--- means "default" only while autosave is off: when it is on, load! prefers
+--- autosave.vim.
 local function reload_hint(name)
-  local cmd = name == config.get().default_name and ":SessionMgr load!" or (":SessionMgr load " .. name)
+  local cfg = config.get()
+  local cmd = (name == cfg.default_name and not cfg.autosave) and ":SessionMgr load!" or (":SessionMgr load " .. name)
   local key = hints.key_for "load"
   return key and ("Reload with %s  or  %s"):format(cmd, key) or ("Reload with " .. cmd)
 end
@@ -167,6 +170,32 @@ function M.autosave()
   return (M.save(require("session-mgr.project").detect(), M.AUTOSAVE_NAME, { silent = true, background = true }))
 end
 
+--- Which session `load!` (no name) opens in `project`: autosave.vim while
+--- autosave is on and the file exists, else the default session if it
+--- exists. With autosave off only the default session counts.
+--- @param project SessionMgrProject
+--- @return string|nil name, string|nil why  why: the message when neither fits
+function M.default_target(project)
+  local cfg = config.get()
+  local has = function(name)
+    return store.exists(cfg.root, project.key, name)
+  end
+  if cfg.autosave and has(M.AUTOSAVE_NAME) then
+    return M.AUTOSAVE_NAME
+  end
+  if has(cfg.default_name) then
+    return cfg.default_name
+  end
+  if cfg.autosave then
+    return nil, ("No %q or %q session for %s"):format(M.AUTOSAVE_NAME, cfg.default_name, project.label)
+  end
+  local why = ("No %q session for %s"):format(cfg.default_name, project.label)
+  if has(M.AUTOSAVE_NAME) then
+    why = why .. (". Autosave is off, so autosave.vim is skipped: :SessionMgr load %s"):format(M.AUTOSAVE_NAME)
+  end
+  return nil, why
+end
+
 --- Source `file`, after proving it lives under the sessions root: a session
 --- file is Vimscript, and sourcing runs it.
 local function source(file)
@@ -179,10 +208,36 @@ local function source(file)
   return ok, ok and nil or tostring(err)
 end
 
+--- Before wiping every buffer: ask about unsaved buffers and running
+--- terminals, then run `go`, or call on_done(false) if you cancel.
+--- @param verb "load"|"clear" names the button ("discard & load")
+--- @param failed string message prefix when :wall fails
+local function after_guard(verb, failed, go, on_done)
+  local loss = guard.collect()
+  if guard.is_clean(loss) then
+    return go()
+  end
+  guard.ask(loss, function(choice)
+    if choice == "write" then
+      local ok, err = pcall(vim.cmd.wall)
+      if not ok then
+        notify(failed .. ", :wall failed: " .. tostring(err), vim.log.levels.ERROR)
+        return on_done(false)
+      end
+      go()
+    elseif choice == "discard" then
+      go()
+    else
+      on_done(false)
+    end
+  end, verb)
+end
+
 --- @param project SessionMgrProject the project the session belongs to
 --- @param name string
 --- @param on_done fun(ok: boolean)|nil
-function M.load(project, name, on_done)
+--- @param opts { silent: boolean|nil }|nil silent: no "Loaded ..." message
+function M.load(project, name, on_done, opts)
   on_done = on_done or function() end
   local cfg = config.get()
   local file = paths.session_file(cfg.root, project.key, name)
@@ -216,28 +271,80 @@ function M.load(project, name, on_done)
     store.touch_loaded(cfg.root, project, name)
     state.set_active(project, name)
     emit("post_load", ctx)
-    notify(("Loaded %s (%s)"):format(name, project.label))
+    if not (opts and opts.silent) then
+      notify(("Loaded %s (%s)"):format(name, project.label))
+    end
     on_done(true)
   end
 
-  local loss = cfg.load.replace and guard.collect() or nil
-  if not loss or guard.is_clean(loss) then
+  if not cfg.load.replace then
     return go()
   end
-  guard.ask(loss, function(choice)
-    if choice == "write" then
-      local ok, err = pcall(vim.cmd.wall)
-      if not ok then
-        notify("Not loaded, :wall failed: " .. tostring(err), vim.log.levels.ERROR)
-        return on_done(false)
-      end
-      go()
-    elseif choice == "discard" then
-      go()
-    else
-      on_done(false)
+  after_guard("load", "Not loaded", go, on_done)
+end
+
+--- How to reach a subcommand: the user's own key if they mapped one,
+--- else the command itself.
+local function key_or_cmd(sub)
+  return hints.key_for(sub) or (":SessionMgr " .. sub)
+end
+
+--- Start over: wipe every buffer, window and tab and leave no session
+--- active. The layout being left goes to autosave.vim first (and to the
+--- active session with resave_active), so `:SessionMgr load autosave`
+--- brings it back until the next autosave.
+--- @param on_done fun(ok: boolean)|nil
+function M.new(on_done)
+  on_done = on_done or function() end
+  after_guard("clear", "Not cleared", function()
+    M.resave_active()
+    M.autosave()
+    vim.cmd "silent! %bwipeout!"
+    vim.cmd "silent! tabonly!"
+    vim.cmd "silent! only!"
+    state.clear()
+    notify(("New session: nothing open. Save it with %s"):format(key_or_cmd "save"))
+    on_done(true)
+  end, on_done)
+end
+
+--- True when nvim looks freshly started: no file arguments, no named or
+--- modified buffer, no active session, and no float focused (a picker the
+--- first :SessionMgr opened).
+local function fresh_start()
+  if vim.fn.argc(-1) > 0 or state.active() then
+    return false
+  end
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.bo[buf].buflisted and (vim.api.nvim_buf_get_name(buf) ~= "" or vim.bo[buf].modified) then
+      return false
     end
-  end)
+  end
+  return vim.api.nvim_win_get_config(0).relative == ""
+end
+
+--- Load this project's autosave.vim when autosave is on and nvim was started
+--- without files, then say how to start fresh instead.
+--- @return boolean loaded
+function M.autoload()
+  local cfg = config.get()
+  if not (cfg.autosave and fresh_start()) then
+    return false
+  end
+  local project = require("session-mgr.project").detect()
+  if not store.exists(cfg.root, project.key, M.AUTOSAVE_NAME) then
+    return false
+  end
+  local loaded = false
+  M.load(project, M.AUTOSAVE_NAME, function(ok)
+    loaded = ok
+  end, { silent = true })
+  if loaded then
+    notify(
+      ("Last autosaved session was automatically loaded. You can start a new session with %s"):format(key_or_cmd "new")
+    )
+  end
+  return loaded
 end
 
 return M

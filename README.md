@@ -68,7 +68,7 @@ return {
 ```
 
 `setup()` is optional: with no call at all the plugin uses the defaults. The
-autosave timer and exit save only start once `setup()` has run, so keep
+autosave timer, exit save and startup autoload only start once `setup()` has run, so keep
 `event = "VeryLazy"` next to `cmd`. With `cmd` alone the plugin loads on your
 first `:SessionMgr` and nothing is autosaved before that.
 
@@ -77,11 +77,12 @@ first `:SessionMgr` and nothing is autosaved before that.
 | Press | What happens |
 |---|---|
 | `<leader>sS` | Save this project's `default` session. No prompt, no overwrite warning. |
-| `<leader>sL` | Load it. |
+| `<leader>sL` | Load `autosave` while [autosave](#autosave) is on and `autosave.vim` exists, else `default`. |
 | `<leader>ss` | Name a session in the save popup. |
 | `<leader>sl` | Pick one of this project's sessions. |
 | `<leader>sA` | Pick from every project's sessions. |
 | `<leader>sa` | Switch [autosave](#autosave) on or off for this Neovim. |
+| `<leader>sn` | Start a new, empty session. |
 
 After a save a toast shows the full path and how to get back:
 
@@ -91,7 +92,9 @@ Reload with :SessionMgr load coolio  or  <leader>sl
 ```
 
 The key in that message is the one **you** mapped (see [Keymaps](#keymaps)),
-not a hardcoded default.
+not a hardcoded default. After saving the `default` session the hint says
+`:SessionMgr load!` only while autosave is off. With autosave on, `load!`
+would pick `autosave`, so the hint says `:SessionMgr load default`.
 
 ## Commands
 
@@ -104,10 +107,11 @@ One command, with completion for subcommands and session names.
 | `:SessionMgr save!` | Save the `default` session. |
 | `:SessionMgr load` | Open the picker for this project. |
 | `:SessionMgr load {name}` | Load `{name}`. |
-| `:SessionMgr load!` | Load the `default` session. |
+| `:SessionMgr load!` | Load `autosave` while [autosave](#autosave) is on and `autosave.vim` exists, else `default`. With autosave off only `default` counts. Warns if nothing fits. |
 | `:SessionMgr all` | Open the picker for all projects. |
 | `:SessionMgr procs` | Open the picker straight on the Processes tab. |
 | `:SessionMgr autosave [on\|off\|toggle]` | Switch [autosave](#autosave) for this Neovim. No argument toggles. |
+| `:SessionMgr new` | Start an empty session: wipe every buffer, close other tabs and windows, clear the active session. Asks about unsaved buffers first. |
 | `:SessionMgr rename {old} {new}` | Rename; use count and times follow the session. Refuses to overwrite. |
 | `:SessionMgr delete {name}` | Delete the file and its record. No prompt (the picker's `d` asks). |
 
@@ -158,17 +162,50 @@ Details that matter:
   one to save wins.
 - To re-save the active session on exit and before switching to another one
   (the old `autosave` behaviour), set `resave_active = true`.
+- `:SessionMgr load!` and `<leader>sL` load `autosave` while autosave is on
+  and `autosave.vim` exists, else `default`. With autosave off only `default`
+  counts, even if `autosave.vim` exists. If nothing fits you get a warning:
+  `No "autosave" or "default" session for <project>` with autosave on, or
+  `No "default" session for <project>` with it off (plus `. Autosave is off,
+  so autosave.vim is skipped: :SessionMgr load autosave` when that file
+  exists). An explicit name such as `:SessionMgr load default` loads exactly
+  that session.
+- At startup the project's `autosave.vim` is loaded for you when nvim starts
+  with no file arguments, no named or modified buffer, no active session and
+  no float focused. It waits for `VimEnter` and a UI, so a start screen draws
+  first and a headless run never autoloads. It happens once per Neovim, and
+  instead of "Loaded autosave" you get `Last autosaved session was
+  automatically loaded. You can start a new session with <key>`. `<key>` is
+  whatever you mapped to `<cmd>SessionMgr new<cr>`, else `:SessionMgr new`.
+  To opt out, set `autosave = false` or start nvim with a file.
+
+  ![Plain nvim in a project with an autosave.vim: the saved file is open and a notice says the last autosaved session was loaded and that a new one starts with the new-session key](docs/media/autoload.png)
+
+- `:SessionMgr new` starts empty. It asks about unsaved buffers and running
+  terminals first (`write all & clear`, `discard & clear`; cancel keeps
+  everything). Then it re-saves the active session if `resave_active` is on,
+  writes `autosave.vim` if autosave is on, wipes every buffer, closes other
+  tabs and windows, and clears the active session. The old layout stays in
+  `autosave.vim`, so `:SessionMgr load autosave` brings it back until the
+  next autosave overwrites it. It ends with `New session: nothing open. Save
+  it with <save key or :SessionMgr save>`.
+
+  ![After the new-session key: an empty [No Name] buffer and the notice "New session: nothing open. Save it with the save key"](docs/media/new-session.png)
+
+- The timer, the exit save and the startup autoload need `setup()` to run at
+  startup. See [Install](#install) for the lazy.nvim trigger.
 
 Switch it for this Neovim with `<leader>sa` (needs `keymaps = true` or the
-mapping from [Keymaps](#keymaps)), `:SessionMgr autosave [on|off|toggle]`, or `s` in the picker.
-This starts or stops the timer, and the exit save follows. It is not saved:
-the next start uses `autosave` from your config. The command answers
-`Autosave on: autosave.vim every 5m, on exit and before a load` or
+mapping from [Keymaps](#keymaps)), `:SessionMgr autosave [on|off|toggle]`, or
+`s` in the picker. This starts or stops the timer, and the exit save follows.
+It is not saved: the next start uses `autosave` from your config. The command
+answers `Autosave on: autosave.vim every 5m, on exit and before a load` or
 `Autosave off`. The picker toggles silently, because a toast would cover its
 title. Its footer shows `s autosave on` (green) or `s autosave off` (yellow)
 right after the `a` hint.
-- The timer and the exit save need `setup()` to run at startup. See
-  [Install](#install) for the lazy.nvim trigger.
+
+![The load picker with five sessions and the footer reading s autosave on, with on in green](docs/media/picker-autosave-on.png)
+![The same picker after pressing s: the footer reads s autosave off, with off in yellow, and no toast covers the picker](docs/media/picker-autosave-off.png)
 
 ## Processes tab
 
@@ -240,8 +277,9 @@ map("n", "<leader>ss", "<cmd>SessionMgr save<cr>",  { desc = "session save as (n
 map("n", "<leader>sl", "<cmd>SessionMgr load<cr>",  { desc = "session load (this project)" })
 map("n", "<leader>sa", "<cmd>SessionMgr autosave<cr>", { desc = "session autosave on/off" })
 map("n", "<leader>sA", "<cmd>SessionMgr all<cr>",   { desc = "session load (all projects)" })
+map("n", "<leader>sn", "<cmd>SessionMgr new<cr>",  { desc = "session new (start empty)" })
 map("n", "<leader>sS", "<cmd>SessionMgr save!<cr>", { desc = "session save default" })
-map("n", "<leader>sL", "<cmd>SessionMgr load!<cr>", { desc = "session load default" })
+map("n", "<leader>sL", "<cmd>SessionMgr load!<cr>", { desc = "session load autosave or default" })
 ```
 
 `keymaps = true` does not install a key for the Processes tab. If you want
@@ -276,7 +314,7 @@ the command (or set `hints.load_key`).
 | `<CR>`, double-click | load |
 | click | select |
 | `r` | rename |
-| `d` | delete (asks; the `default` session asks twice) |
+| `d` | delete (asks; the `default` session asks twice, and the second prompt says `load!` then only finds `autosave` while autosave is on) |
 | `p` | show / hide the preview pane |
 | `?` | help |
 | `q` `<Esc>` | close (the first `<Esc>` clears an active filter) |
@@ -336,7 +374,8 @@ test, so it cannot drift.
 require("session-mgr").setup {
   -- Where sessions live: <root>/<escaped project root>/<name>.vim
   root = vim.fn.stdpath "data" .. "/sessions",
-  -- The session used by `:SessionMgr save!` / `load!`. Always listed first.
+  -- The session `:SessionMgr save!` writes. `load!` loads it too, unless
+  -- autosave is on and autosave.vim exists. Always listed first.
   default_name = "default",
   -- Write the current layout to this project's "autosave" session
   -- (autosave.vim) every autosave_interval seconds, on exit, and before a
@@ -412,7 +451,7 @@ require("session-mgr").setup {
     pre_load = false,
     post_load = false,
   },
-  -- true: install <leader>ss / sl / sa / sA / sS / sL.
+  -- true: install <leader>ss / sl / sa / sA / sn / sS / sL.
   keymaps = false,
   -- false silences success messages; warnings and errors always show.
   notify = true,
@@ -587,7 +626,8 @@ vim.api.nvim_create_autocmd("User", {
 })
 ```
 
-Lua API: `require("session-mgr").save(name?)`, `.load(name?, on_done?)`,
+Lua API: `require("session-mgr").save(name?)`, `.load(name?, on_done?)` (no
+name picks `autosave` or `default` like `load!`), `.new(on_done?)`,
 `.rename(old, new)`, `.delete(name)`, `.names()`, `.active()`,
 `.set_autosave(on)`, `.toggle_autosave()`.
 
@@ -600,8 +640,13 @@ active session.
 
 - **`:SessionMgr` is not a command.** With `defaults.lazy = true` a spec
   needs a trigger: `cmd = { "SessionMgr" }`.
-- **Nothing is autosaved until I run a command.** The plugin is only loaded
-  on the first `:SessionMgr`. Add `event = "VeryLazy"` to the spec.
+- **Nothing is autosaved, and the last session does not come back at
+  startup, until I run a command.** The plugin is only loaded on the first
+  `:SessionMgr`. Add `event = "VeryLazy"` to the spec.
+- **The last session did not load at startup.** Autoload needs `autosave =
+  true`, an `autosave.vim` for this project, and a start with no file
+  arguments, no named or modified buffer, no active session and a UI (not
+  headless).
 - **Edits to the plugin do nothing.** `:checkhealth session-mgr` shows the
   loaded path; it should be `~/dev/session-mgr.nvim`. Check that checkout is
   on the branch you expect.
@@ -627,3 +672,6 @@ The UI is split so almost all of it is testable without a screen:
 `ui/model` (`reduce(state, action)`) and `ui/render` (state → lines,
 byte-accurate highlight spans, clickable regions) are pure; only `ui/float`
 creates windows.
+
+The images under `docs/media/` are generated. `bash docs/tapes/capture.sh`
+regenerates them (needs vhs).

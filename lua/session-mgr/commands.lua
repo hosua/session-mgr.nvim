@@ -40,6 +40,9 @@ M.subcommands = {
   procs = function()
     require("session-mgr.ui.picker").open "procs"
   end,
+  new = function()
+    require("session-mgr").new()
+  end,
   autosave = function(args)
     local sm = require "session-mgr"
     local arg = args[1] or "toggle"

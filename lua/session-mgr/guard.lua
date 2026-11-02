@@ -39,7 +39,9 @@ end
 --- (cancel). A function field so tests can stub it.
 --- @param loss SessionMgrLoss
 --- @param cb fun(choice: "write"|"discard"|nil)
-function M.ask(loss, cb)
+--- @param verb string|nil what happens after: "load" (default) or "clear"
+function M.ask(loss, cb, verb)
+  verb = verb or "load"
   local lines = {}
   for _, b in ipairs(loss.modified) do
     lines[#lines + 1] = { { "  M  ", "SessionMgrWarn" }, { b.name } }
@@ -55,9 +57,9 @@ function M.ask(loss, cb)
   local choices = {}
   -- "write all" is only offered when it would actually save everything.
   if #loss.modified > 0 and #loss.unnamed == 0 then
-    choices[#choices + 1] = { key = "w", label = "write all & load", value = "write" }
+    choices[#choices + 1] = { key = "w", label = "write all & " .. verb, value = "write" }
   end
-  choices[#choices + 1] = { key = "d", label = "discard & load", value = "discard", danger = true }
+  choices[#choices + 1] = { key = "d", label = "discard & " .. verb, value = "discard", danger = true }
   local n = #loss.modified + #loss.unnamed
   local title = n > 0 and ("%d unsaved buffer%s"):format(n, n == 1 and "" or "s")
     or ("%d running terminal%s"):format(#loss.terminals, #loss.terminals == 1 and "" or "s")

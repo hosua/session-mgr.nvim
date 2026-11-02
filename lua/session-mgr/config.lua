@@ -7,7 +7,8 @@ local M = {}
 M.defaults = {
   -- Where sessions live: <root>/<escaped project root>/<name>.vim
   root = vim.fn.stdpath "data" .. "/sessions",
-  -- The session used by `:SessionMgr save!` / `load!`. Always listed first.
+  -- The session `:SessionMgr save!` writes. `load!` loads it too, unless
+  -- autosave is on and autosave.vim exists. Always listed first.
   default_name = "default",
   -- Write the current layout to this project's "autosave" session
   -- (autosave.vim) every autosave_interval seconds, on exit, and before a
@@ -83,7 +84,7 @@ M.defaults = {
     pre_load = false,
     post_load = false,
   },
-  -- true: install <leader>ss / sl / sa / sA / sS / sL.
+  -- true: install <leader>ss / sl / sa / sA / sn / sS / sL.
   keymaps = false,
   -- false silences success messages; warnings and errors always show.
   notify = true,

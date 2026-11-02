@@ -64,13 +64,16 @@ describe("round trip", function()
     eq(1, row.uses)
   end)
 
-  it("save with no name uses the default session and says load!", function()
+  it("save with no name uses the default session; the hint says load! only with autosave off", function()
     workspace()
-    local cfg = config.resolve { root = tmpdir() }
+    local cfg = config.resolve { root = tmpdir(), autosave = false }
     vim.cmd "edit a.txt"
     ok(sm.save())
     ok(vim.uv.fs_stat(paths.session_file(cfg.root, project.detect().key, "default")))
     ok(msgs[#msgs]:find(":SessionMgr load!", 1, true), msgs[#msgs])
+    config.resolve { root = cfg.root }
+    ok(sm.save())
+    ok(msgs[#msgs]:find(":SessionMgr load default", 1, true), msgs[#msgs])
   end)
 
   it("replace = false keeps what was open", function()
@@ -427,5 +430,202 @@ describe("autosave", function()
     vim.cmd "SessionMgr autosave bogus"
     ok(msgs[#msgs]:find("Usage: :SessionMgr autosave", 1, true), msgs[#msgs])
     eq({ "off", "on", "toggle" }, require("session-mgr.commands").complete("", "SessionMgr autosave ", 0))
+  end)
+end)
+
+describe("load! with no name", function()
+  local session = require "session-mgr.session"
+  local function setup(opts)
+    workspace()
+    local root = tmpdir()
+    require("session-mgr").setup(vim.tbl_extend("force", { root = root, autosave_interval = 0 }, opts or {}))
+    return root
+  end
+  --- Saves "default" with a.txt and autosave with b.txt, then opens c.txt.
+  local function both()
+    vim.cmd "edit a.txt"
+    sm.save()
+    vim.cmd "silent! %bwipeout! | edit b.txt"
+    eq(true, session.autosave())
+    vim.cmd "silent! %bwipeout! | edit c.txt"
+  end
+
+  it("prefers autosave while autosave is on", function()
+    setup()
+    both()
+    sm.load()
+    eq({ "b.txt" }, open_names())
+    eq("autosave", sm.active().name)
+  end)
+
+  it("loads default when autosave is off, even with autosave.vim present", function()
+    setup()
+    both()
+    require("session-mgr").set_autosave(false, { quiet = true })
+    vim.cmd "SessionMgr load!"
+    eq({ "a.txt" }, open_names())
+    eq("default", sm.active().name)
+  end)
+
+  it("falls back to default when autosave.vim does not exist", function()
+    setup()
+    vim.cmd "edit a.txt"
+    sm.save()
+    vim.cmd "silent! %bwipeout! | edit c.txt"
+    sm.load()
+    eq("default", sm.active().name)
+  end)
+
+  it("loads autosave when it is the only one and autosave is on", function()
+    setup()
+    vim.cmd "edit b.txt"
+    session.autosave()
+    vim.cmd "silent! %bwipeout! | edit c.txt"
+    sm.load()
+    eq({ "b.txt" }, open_names())
+  end)
+
+  it("says why when there is nothing to load", function()
+    setup()
+    local loaded
+    sm.load(nil, function(okk)
+      loaded = okk
+    end)
+    eq(false, loaded)
+    ok(msgs[#msgs]:find('No "autosave" or "default" session for', 1, true), msgs[#msgs])
+
+    vim.cmd "edit b.txt"
+    session.autosave()
+    require("session-mgr").set_autosave(false, { quiet = true })
+    vim.cmd "SessionMgr load!"
+    eq({ "b.txt" }, open_names())
+    ok(msgs[#msgs]:find(":SessionMgr load autosave", 1, true), msgs[#msgs])
+  end)
+
+  it("an explicit name loads exactly that session", function()
+    setup()
+    both()
+    vim.cmd "SessionMgr load default"
+    eq({ "a.txt" }, open_names())
+  end)
+end)
+
+describe("autoload at startup", function()
+  local session = require "session-mgr.session"
+  local function setup(opts)
+    workspace()
+    local root = tmpdir()
+    require("session-mgr").setup(vim.tbl_extend("force", { root = root, autosave_interval = 0 }, opts or {}))
+    return root
+  end
+  --- Writes autosave.vim with b.txt, then looks like a fresh start again.
+  local function autosaved()
+    vim.cmd "edit b.txt"
+    eq(true, session.autosave())
+    vim.cmd "silent! %bwipeout!"
+    require("session-mgr.state").clear()
+    msgs = {}
+  end
+  local function with_map(lhs, fn)
+    local leader = vim.g.mapleader
+    vim.g.mapleader = " "
+    vim.keymap.set("n", lhs, "<cmd>SessionMgr new<cr>")
+    local okk, err = pcall(fn)
+    vim.keymap.del("n", lhs)
+    vim.g.mapleader = leader
+    assert(okk, err)
+  end
+
+  it("loads autosave.vim and names the user's key for a new session", function()
+    setup()
+    autosaved()
+    with_map(" sn", function()
+      eq(true, session.autoload())
+    end)
+    eq({ "b.txt" }, open_names())
+    eq({
+      "Last autosaved session was automatically loaded. You can start a new session with <leader>sn",
+    }, msgs)
+  end)
+
+  it("names :SessionMgr new when no key is mapped", function()
+    setup()
+    autosaved()
+    eq(true, session.autoload())
+    ok(msgs[#msgs]:find("start a new session with :SessionMgr new", 1, true), msgs[#msgs])
+  end)
+
+  it("does nothing with autosave off, a file open, or no autosave.vim", function()
+    setup()
+    eq(false, session.autoload()) -- no autosave.vim yet
+    autosaved()
+    vim.cmd "edit a.txt"
+    eq(false, session.autoload())
+    eq({ "a.txt" }, open_names())
+    vim.cmd "silent! %bwipeout!"
+    require("session-mgr").set_autosave(false, { quiet = true })
+    eq(false, session.autoload())
+    eq({}, open_names())
+  end)
+
+  it("does nothing once a session is active", function()
+    setup()
+    autosaved()
+    require("session-mgr.state").set_active(project.detect(), "other")
+    eq(false, session.autoload())
+    eq({}, open_names())
+  end)
+
+  it("headless setup never autoloads", function()
+    setup()
+    autosaved()
+    vim.wait(50)
+    eq({}, open_names())
+  end)
+end)
+
+describe("new session", function()
+  local session = require "session-mgr.session"
+  local function setup(opts)
+    workspace()
+    local root = tmpdir()
+    require("session-mgr").setup(vim.tbl_extend("force", { root = root, autosave_interval = 0 }, opts or {}))
+    return root
+  end
+
+  it("wipes every buffer, tab and window, clears the active session, and autosaves first", function()
+    local root = setup()
+    vim.cmd "edit a.txt | vsplit b.txt | tabnew c.txt"
+    sm.save "work"
+    vim.cmd "SessionMgr new"
+    eq({}, open_names())
+    eq(1, #vim.api.nvim_list_tabpages())
+    eq(1, #vim.api.nvim_list_wins())
+    eq(nil, sm.active())
+    ok(msgs[#msgs]:find("New session: nothing open. Save it with", 1, true), msgs[#msgs])
+    local files =
+      require("session-mgr.sessfile").parse(paths.session_file(root, project.detect().key, "autosave")).files
+    table.sort(files)
+    eq({ "a.txt", "b.txt", "c.txt" }, files)
+  end)
+
+  it("asks about unsaved buffers, and cancel keeps everything", function()
+    setup()
+    vim.cmd "edit a.txt"
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { "changed" })
+    local real, verb = guard.ask, nil
+    guard.ask = function(_, cb, v)
+      verb = v
+      cb(nil)
+    end
+    local done
+    session.new(function(okk)
+      done = okk
+    end)
+    guard.ask = real
+    eq("clear", verb)
+    eq(false, done)
+    eq({ "a.txt" }, open_names())
+    vim.cmd "silent! %bwipeout!"
   end)
 end)
