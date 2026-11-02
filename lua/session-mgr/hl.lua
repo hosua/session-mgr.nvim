@@ -36,6 +36,8 @@ M.LINKS = {
   SessionMgrProcBig = "DiagnosticWarn",
   SessionMgrMarked = "DiagnosticInfo",
   SessionMgrMarkedLine = "Visual",
+  SessionMgrAutosaveOn = "DiagnosticOk",
+  SessionMgrAutosaveOff = "DiagnosticWarn",
 }
 
 M.WINHL =

@@ -63,7 +63,11 @@ local function redraw()
     return procs_tab.redraw(p)
   end
   local cfg = config.get().picker
-  local opts = { home = vim.env.HOME, all_key = hints.key_for "all" }
+  local opts = {
+    home = vim.env.HOME,
+    all_key = hints.key_for "all",
+    autosave = require("session-mgr.config").get().autosave,
+  }
   local out = render.render(p.state, os.time(), opts)
   local rects = layout.compute(
     { width = out.width, list_lines = out.list_lines, chrome = render.CHROME_LINES + out.chrome_bottom },
@@ -487,6 +491,16 @@ local function set_keymaps(buf)
     end)
   )
   map("d", per_tab(delete_current, noop))
+  map(
+    "s",
+    per_tab(function()
+      -- No toast: it would sit on the picker's title, and the footer
+      -- already says on or off.
+      local sm = require "session-mgr"
+      sm.set_autosave(not require("session-mgr.config").get().autosave, { quiet = true })
+      redraw()
+    end, noop)
+  )
   map("za", procs_act { type = "toggle_fold" })
   map("zo", procs_act { type = "open_fold" })
   map("zc", procs_act { type = "close_fold" })

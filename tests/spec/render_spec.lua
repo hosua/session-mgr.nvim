@@ -142,6 +142,21 @@ describe("render edge cases", function()
     ok(out.lines[#out.lines]:find "not a git repo", out.lines[#out.lines])
     eq(0, render.render(project_state(), F.NOW, OPTS).chrome_bottom)
   end)
+  it("empty non-git project keeps its empty message and every span inside its line", function()
+    local p = { key = "%n", root = "/srv/u/notes", label = "notes", is_git = false }
+    local out = render.render(model.new { project = p, rows = {} }, F.NOW, OPTS)
+    local text = table.concat(out.lines, "\n")
+    ok(text:find("No sessions yet for notes.", 1, true), text)
+    ok(text:find("Save one with :SessionMgr save", 1, true), text)
+    ok(text:find("not a git repo", 1, true), text)
+    for _, sp in ipairs(out.spans) do
+      local line = out.lines[sp.row + 1] or ""
+      ok(
+        sp.col_end <= #line,
+        ("span %s on row %d ends at %d, line is %d bytes"):format(sp.hl, sp.row, sp.col_end, #line)
+      )
+    end
+  end)
   it("is never narrower than its own footer", function()
     local out = render.render(model.new { project = F.project_a, rows = {} }, F.NOW, OPTS)
     local w = 2
@@ -149,6 +164,27 @@ describe("render edge cases", function()
       w = w + vim.fn.strdisplaywidth(c[1])
     end
     ok(out.width >= w, ("width %d < footer %d"):format(out.width, w))
+  end)
+  it("footer shows the autosave switch and its state after the a hint", function()
+    local function tail(autosave)
+      local footer = render.footer(project_state(), { autosave = autosave })
+      local out = {}
+      for _, c in ipairs(footer) do
+        out[#out + 1] = c[1]
+      end
+      local text = table.concat(out)
+      return text:match "a all  (s autosave %a+)", footer
+    end
+    local on, footer = tail(true)
+    eq("s autosave on", on)
+    ok(vim.tbl_contains(
+      vim.tbl_map(function(c)
+        return c[2]
+      end, footer),
+      "SessionMgrAutosaveOn"
+    ))
+    eq("s autosave off", (tail(false)))
+    eq(nil, (tail(nil)))
   end)
   it("footer switches to filter keys while the filter has focus", function()
     local out = render.render(model.reduce(project_state(), { type = "focus_filter", focused = true }), F.NOW, OPTS)

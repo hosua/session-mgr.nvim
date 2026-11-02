@@ -57,7 +57,10 @@ describe("round trip", function()
     eq(2, #vim.api.nvim_list_tabpages())
     eq(dir, vim.uv.fs_realpath(vim.fn.getcwd()))
     eq({ key = project.detect().key, name = "work" }, sm.active())
-    local row = require("session-mgr.store").list(cfg.root, project.detect())[1]
+    local rows = require("session-mgr.store").list(cfg.root, project.detect())
+    local row = vim.iter(rows):find(function(r)
+      return r.name == "work"
+    end)
     eq(1, row.uses)
   end)
 
@@ -247,12 +250,12 @@ describe(":checkhealth session-mgr", function()
   end)
 end)
 
-describe("autosave", function()
+describe("resave_active", function()
   local session = require "session-mgr.session"
-  local function setup(autosave)
+  local function setup(resave)
     workspace()
     local root = tmpdir()
-    require("session-mgr").setup { root = root, autosave = autosave }
+    require("session-mgr").setup { root = root, resave_active = resave, autosave = false }
     vim.cmd "edit a.txt"
     sm.save "one"
     sm.save "two"
@@ -288,13 +291,141 @@ describe("autosave", function()
   it("is off by default, and never creates a session", function()
     local root = setup(false)
     vim.cmd "edit b.txt"
-    eq(false, session.autosave())
-    eq(0, #vim.api.nvim_get_autocmds { group = "session-mgr", event = "VimLeavePre" })
-    require("session-mgr").setup { root = root, autosave = true }
+    eq(false, session.resave_active())
+    require("session-mgr").setup { root = root, resave_active = true, autosave = false }
     require("session-mgr.state").clear()
-    eq(false, session.autosave()) -- nothing active
+    eq(false, session.resave_active()) -- nothing active
     sm.save "three"
     sm.delete "three"
-    eq(false, session.autosave()) -- active cleared by delete
+    eq(false, session.resave_active()) -- active cleared by delete
+  end)
+end)
+
+describe("autosave", function()
+  local session = require "session-mgr.session"
+  local timer = require "session-mgr.autosave"
+  local function setup(opts)
+    workspace()
+    local root = tmpdir()
+    require("session-mgr").setup(vim.tbl_extend("force", { root = root }, opts or {}))
+    return root
+  end
+  local function file(root)
+    return paths.session_file(root, project.detect().key, "autosave")
+  end
+  local function files_in(root)
+    return require("session-mgr.sessfile").parse(file(root)).files
+  end
+
+  it("is on by default with a 5 minute timer", function()
+    setup()
+    eq(true, config.get().autosave)
+    eq(300, config.get().autosave_interval)
+    eq(true, timer.running())
+    eq(1, #vim.api.nvim_get_autocmds { group = "session-mgr", event = "VimLeavePre" })
+  end)
+
+  it("writes autosave.vim silently and leaves the active session alone", function()
+    local root = setup()
+    vim.cmd "edit a.txt"
+    sm.save "work"
+    vim.cmd "vsplit b.txt | copen"
+    msgs = {}
+    eq(true, session.autosave())
+    eq({}, msgs)
+    ok(vim.fs.basename(file(root)) == "autosave.vim")
+    eq(
+      { "a.txt", "b.txt" },
+      (function()
+        local f = files_in(root)
+        table.sort(f)
+        return f
+      end)()
+    )
+    eq("work", sm.active().name)
+    ok(vim.fn.getqflist({ winid = 0 }).winid ~= 0, "quickfix window was closed")
+    vim.cmd "cclose"
+  end)
+
+  it("skips when no file is open, so an empty start never overwrites it", function()
+    local root = setup()
+    eq(false, session.autosave())
+    ok(not vim.uv.fs_stat(file(root)))
+  end)
+
+  it("writes on exit and before a load wipes the buffers", function()
+    local root = setup()
+    vim.cmd "edit a.txt"
+    sm.save "one"
+    vim.cmd "edit c.txt"
+    sm.load "one"
+    ok(vim.tbl_contains(files_in(root), "c.txt"), vim.inspect(files_in(root)))
+    vim.cmd "edit b.txt"
+    vim.api.nvim_exec_autocmds("VimLeavePre", {})
+    ok(vim.tbl_contains(files_in(root), "b.txt"))
+  end)
+
+  it("loading autosave does not overwrite it first", function()
+    local root = setup()
+    vim.cmd "edit a.txt"
+    session.autosave()
+    vim.cmd "edit c.txt"
+    sm.load "autosave"
+    eq({ "a.txt" }, files_in(root))
+    eq({ "a.txt" }, open_names())
+  end)
+
+  it("the timer writes on its own, and waits while a float has focus", function()
+    local root = setup()
+    vim.cmd "edit a.txt"
+    local float = vim.api.nvim_open_win(vim.api.nvim_create_buf(false, true), true, {
+      relative = "editor",
+      row = 1,
+      col = 1,
+      width = 10,
+      height = 2,
+    })
+    timer.start(20)
+    vim.wait(100)
+    ok(not vim.uv.fs_stat(file(root)), "saved while a float had focus")
+    vim.api.nvim_win_close(float, true)
+    ok(
+      vim.wait(6000, function()
+        return vim.uv.fs_stat(file(root)) ~= nil
+      end, 20),
+      "timer never wrote autosave.vim"
+    )
+    timer.stop()
+  end)
+
+  it("autosave = false or interval 0 starts no timer", function()
+    local root = setup { autosave = false }
+    eq(false, timer.running())
+    vim.cmd "edit a.txt"
+    vim.api.nvim_exec_autocmds("VimLeavePre", {})
+    ok(not vim.uv.fs_stat(file(root)), "exit save ran with autosave off")
+    setup { autosave_interval = 0 }
+    eq(false, timer.running())
+  end)
+
+  it("toggles at runtime: timer, exit save and message follow", function()
+    local root = setup { autosave = false }
+    vim.cmd "edit a.txt"
+    msgs = {}
+    vim.cmd "SessionMgr autosave"
+    eq(true, config.get().autosave)
+    eq(true, timer.running())
+    eq({ "Autosave on: autosave.vim every 5m, on exit and before a load" }, msgs)
+    vim.api.nvim_exec_autocmds("VimLeavePre", {})
+    ok(vim.uv.fs_stat(file(root)), "exit save did not run after toggling on")
+    vim.cmd "SessionMgr autosave off"
+    eq(false, config.get().autosave)
+    eq(false, timer.running())
+    eq("Autosave off", msgs[#msgs])
+    vim.cmd "SessionMgr autosave off"
+    eq(false, config.get().autosave)
+    vim.cmd "SessionMgr autosave bogus"
+    ok(msgs[#msgs]:find("Usage: :SessionMgr autosave", 1, true), msgs[#msgs])
+    eq({ "off", "on", "toggle" }, require("session-mgr.commands").complete("", "SessionMgr autosave ", 0))
   end)
 end)

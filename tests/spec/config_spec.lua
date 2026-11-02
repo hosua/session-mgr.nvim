@@ -19,6 +19,9 @@ describe("config", function()
     eq({}, problems)
     eq("default", cfg.default_name)
     eq(true, cfg.load.replace)
+    eq(true, cfg.autosave)
+    eq(300, cfg.autosave_interval)
+    eq(false, cfg.resave_active)
     eq(vim.fs.normalize(vim.fn.stdpath "data" .. "/sessions"), cfg.root)
   end)
 
@@ -29,6 +32,17 @@ describe("config", function()
     end)
     eq({ "unknown key autosav", "unknown key picker.previw" }, problems)
     eq(1, #msgs)
+  end)
+
+  it("rejects an autosave_interval between 0 and 10 seconds", function()
+    local cfg, problems
+    quiet(function()
+      cfg, problems = config.resolve { autosave_interval = 3 }
+    end)
+    eq({ "autosave_interval must be 0 or >= 10 seconds, got 3" }, problems)
+    eq(300, cfg.autosave_interval)
+    eq({}, select(2, config.resolve { autosave_interval = 0 }))
+    eq({}, select(2, config.resolve { autosave_interval = 60 }))
   end)
 
   it("reports a wrong type with the dotted option name", function()

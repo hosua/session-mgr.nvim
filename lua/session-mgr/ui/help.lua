@@ -37,7 +37,13 @@ M.SECTIONS = {
   {
     "Sessions",
     tab = "sessions",
-    { { "⏎  double-click", "load" }, { "r", "rename" }, { "d", "delete" }, { "a", "this project <-> all projects" } },
+    {
+      { "⏎  double-click", "load" },
+      { "r", "rename" },
+      { "d", "delete" },
+      { "a", "this project <-> all projects" },
+      { "s", "autosave on / off for this nvim (footer shows which)" },
+    },
   },
   {
     "Processes",
