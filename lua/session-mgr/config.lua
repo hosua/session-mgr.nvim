@@ -9,9 +9,15 @@ M.defaults = {
   root = vim.fn.stdpath "data" .. "/sessions",
   -- The session used by `:SessionMgr save!` / `load!`. Always listed first.
   default_name = "default",
+  -- Write the current layout to this project's "autosave" session
+  -- (autosave.vim) every autosave_interval seconds, on exit, and before a
+  -- load replaces your buffers. Skipped while no file is open, so an empty
+  -- start screen never overwrites it. Leaves the active session alone.
+  autosave = true,
+  autosave_interval = 300, -- seconds; 0 = only on exit and before a load
   -- Re-save the ACTIVE session on exit and before switching to another one.
   -- Never creates a session by itself.
-  autosave = false,
+  resave_active = false,
   -- One-time, copy-only import of legacy <root>/%path%to%cwd.vim files.
   migrate_legacy = true,
   load = {
@@ -71,13 +77,13 @@ M.defaults = {
     load_key = false,
   },
   hooks = {
-    -- Each is false or function(ctx) with ctx = { project, name, file }.
+    -- Each is false or function(ctx) with ctx = { project, name, file, autosave }.
     pre_save = false,
     post_save = false,
     pre_load = false,
     post_load = false,
   },
-  -- true: install <leader>ss / sl / sa / sS / sL.
+  -- true: install <leader>ss / sl / sa / sA / sS / sL.
   keymaps = false,
   -- false silences success messages; warnings and errors always show.
   notify = true,
@@ -180,6 +186,11 @@ function M.resolve(opts)
         pc[k] = M.defaults.procs[k]
       end
     end
+  end
+  local every = cfg.autosave_interval
+  if type(every) == "number" and every ~= 0 and every < 10 then
+    problems[#problems + 1] = ("autosave_interval must be 0 or >= 10 seconds, got %s"):format(every)
+    cfg.autosave_interval = M.defaults.autosave_interval
   end
   if type(cfg.root) == "string" then
     cfg.root = vim.fs.normalize(cfg.root)

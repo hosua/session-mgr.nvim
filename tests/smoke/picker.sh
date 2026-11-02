@@ -11,7 +11,7 @@ smoke_start 160 32 env SMOKE_ROOT="$SMOKE_ROOT" nvim --clean -u tests/smoke/init
 smoke_keys ' sl'
 smoke_expect 'Load a session for' || rc=1
 smoke_expect '▌ +1 +default' || rc=1
-smoke_expect 'not a git repo: listed only from this folder \(<leader>sa' || rc=1
+smoke_expect 'not a git repo: listed only from this folder \(<leader>sA' || rc=1
 smoke_expect '⏎ load  / filter' || rc=1
 smoke_keys 2
 smoke_expect 'Uses ▼' || rc=1
@@ -20,6 +20,12 @@ smoke_expect 'layout +1 tab, 1 window' || rc=1
 smoke_keys p
 smoke_reject 'layout +1 tab' || rc=1
 smoke_keys p
+smoke_expect 'a all  s autosave on' || rc=1
+smoke_keys s
+smoke_expect 's autosave off' || rc=1
+smoke_reject 'Autosave off' || rc=1            # no toast over the picker
+smoke_keys s
+smoke_expect 's autosave on' || rc=1
 smoke_keys a
 smoke_expect 'Showing your saved sessions for all projects' || rc=1
 smoke_expect 'other-repo +/srv/other-repo' || rc=1

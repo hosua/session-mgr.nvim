@@ -26,6 +26,7 @@ last-used / updated / created times.
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Commands](#commands)
+- [Autosave](#autosave)
 - [Processes tab](#processes-tab)
 - [Keymaps](#keymaps)
 - [Configuration](#configuration)
@@ -60,12 +61,16 @@ return {
     "hosua/session-mgr.nvim",
     dev = true,
     cmd = { "SessionMgr" },   -- the load trigger; the keymaps below ride it
+    event = "VeryLazy",       -- so autosave runs from startup, not from the first command
     opts = {},
   },
 }
 ```
 
-`setup()` is optional: with no call at all the plugin uses the defaults.
+`setup()` is optional: with no call at all the plugin uses the defaults. The
+autosave timer and exit save only start once `setup()` has run, so keep
+`event = "VeryLazy"` next to `cmd`. With `cmd` alone the plugin loads on your
+first `:SessionMgr` and nothing is autosaved before that.
 
 ## Quick start
 
@@ -75,7 +80,8 @@ return {
 | `<leader>sL` | Load it. |
 | `<leader>ss` | Name a session in the save popup. |
 | `<leader>sl` | Pick one of this project's sessions. |
-| `<leader>sa` | Pick from every project's sessions. |
+| `<leader>sA` | Pick from every project's sessions. |
+| `<leader>sa` | Switch [autosave](#autosave) on or off for this Neovim. |
 
 After a save a toast shows the full path and how to get back:
 
@@ -101,6 +107,7 @@ One command, with completion for subcommands and session names.
 | `:SessionMgr load!` | Load the `default` session. |
 | `:SessionMgr all` | Open the picker for all projects. |
 | `:SessionMgr procs` | Open the picker straight on the Processes tab. |
+| `:SessionMgr autosave [on\|off\|toggle]` | Switch [autosave](#autosave) for this Neovim. No argument toggles. |
 | `:SessionMgr rename {old} {new}` | Rename; use count and times follow the session. Refuses to overwrite. |
 | `:SessionMgr delete {name}` | Delete the file and its record. No prompt (the picker's `d` asks). |
 
@@ -120,6 +127,48 @@ buffer exists, since it could not be written:
 │  d  discard & load                                     │
 ╰ q cancel ──────────────────────────────────────────────╯
 ```
+
+## Autosave
+
+On by default (`autosave = true`). The current layout is written to the
+project's session named `autosave` (`<root>/<project>/autosave.vim`):
+
+- every `autosave_interval` seconds (default 300; `0` turns the timer off,
+  and values 1 to 9 are rejected),
+- on exit (`VimLeavePre`),
+- right before a load wipes your buffers, so a wrong load is undone by
+  loading `autosave`. Loading this project's `autosave` itself does not
+  overwrite it first.
+
+Details that matter:
+
+- Nothing is written while no listed file buffer is open, so an empty start
+  screen never replaces a good `autosave.vim`.
+- It does not change the active session (the `●` one) and closes no windows.
+  `:mksession` already leaves out floats, quickfix and `nofile` windows.
+- A tick that lands in insert, visual or command-line mode, the command-line
+  window, or with a float focused (the picker, a confirm) retries every 5
+  seconds until you are back in normal mode.
+- `pre_save` and `post_save` hooks still fire. Their `ctx.autosave` is `true`
+  for these background saves and `false` for normal ones, so a hook like
+  `cclose` can skip them.
+- `autosave` shows up in the picker like any session: load, rename and delete
+  work on it.
+- Two Neovim instances in the same project share one `autosave.vim`. The last
+  one to save wins.
+- To re-save the active session on exit and before switching to another one
+  (the old `autosave` behaviour), set `resave_active = true`.
+
+Switch it for this Neovim with `<leader>sa` (needs `keymaps = true` or the
+mapping from [Keymaps](#keymaps)), `:SessionMgr autosave [on|off|toggle]`, or `s` in the picker.
+This starts or stops the timer, and the exit save follows. It is not saved:
+the next start uses `autosave` from your config. The command answers
+`Autosave on: autosave.vim every 5m, on exit and before a load` or
+`Autosave off`. The picker toggles silently, because a toast would cover its
+title. Its footer shows `s autosave on` (green) or `s autosave off` (yellow)
+right after the `a` hint.
+- The timer and the exit save need `setup()` to run at startup. See
+  [Install](#install) for the lazy.nvim trigger.
 
 ## Processes tab
 
@@ -189,7 +238,8 @@ The plugin installs **no** global keymaps unless `keymaps = true`. Suggested
 local map = vim.keymap.set
 map("n", "<leader>ss", "<cmd>SessionMgr save<cr>",  { desc = "session save as (named)" })
 map("n", "<leader>sl", "<cmd>SessionMgr load<cr>",  { desc = "session load (this project)" })
-map("n", "<leader>sa", "<cmd>SessionMgr all<cr>",   { desc = "session load (all projects)" })
+map("n", "<leader>sa", "<cmd>SessionMgr autosave<cr>", { desc = "session autosave on/off" })
+map("n", "<leader>sA", "<cmd>SessionMgr all<cr>",   { desc = "session load (all projects)" })
 map("n", "<leader>sS", "<cmd>SessionMgr save!<cr>", { desc = "session save default" })
 map("n", "<leader>sL", "<cmd>SessionMgr load!<cr>", { desc = "session load default" })
 ```
@@ -220,6 +270,7 @@ the command (or set `hints.load_key`).
 | `o` | reverse the order |
 | click a column header | sort by it; click again to reverse |
 | `a` `<Tab>`, or click a scope tab | this project ⇄ all projects |
+| `s` | autosave on / off for this Neovim (session tabs only; the footer shows which) |
 | `/` | filter by name, live. In the filter: `<CR>` keeps it, `<Esc>` clears it, `↓` `↑` move |
 | `<C-l>` | clear the filter |
 | `<CR>`, double-click | load |
@@ -287,9 +338,15 @@ require("session-mgr").setup {
   root = vim.fn.stdpath "data" .. "/sessions",
   -- The session used by `:SessionMgr save!` / `load!`. Always listed first.
   default_name = "default",
+  -- Write the current layout to this project's "autosave" session
+  -- (autosave.vim) every autosave_interval seconds, on exit, and before a
+  -- load replaces your buffers. Skipped while no file is open, so an empty
+  -- start screen never overwrites it. Leaves the active session alone.
+  autosave = true,
+  autosave_interval = 300, -- seconds; 0 = only on exit and before a load
   -- Re-save the ACTIVE session on exit and before switching to another one.
   -- Never creates a session by itself.
-  autosave = false,
+  resave_active = false,
   -- One-time, copy-only import of legacy <root>/%path%to%cwd.vim files.
   migrate_legacy = true,
   load = {
@@ -349,13 +406,13 @@ require("session-mgr").setup {
     load_key = false,
   },
   hooks = {
-    -- Each is false or function(ctx) with ctx = { project, name, file }.
+    -- Each is false or function(ctx) with ctx = { project, name, file, autosave }.
     pre_save = false,
     post_save = false,
     pre_load = false,
     post_load = false,
   },
-  -- true: install <leader>ss / sl / sa / sS / sL.
+  -- true: install <leader>ss / sl / sa / sA / sS / sL.
   keymaps = false,
   -- false silences success messages; warnings and errors always show.
   notify = true,
@@ -376,9 +433,11 @@ default is used.
 {
   "hosua/session-mgr.nvim",
   dev = true,
+  event = "VeryLazy",                      -- start the autosave timer at startup
   cmd = { "SessionMgr" },
   opts = {
-    autosave = true,                       -- keep the active session current on exit / switch
+    autosave_interval = 120,               -- write autosave.vim every 2 minutes
+    resave_active = true,                  -- keep the active session current on exit / switch
     load = { replace = true },
     picker = {
       border = "single",
@@ -388,7 +447,7 @@ default is used.
     },
     save_prompt = { width = 72, max_list_height = 15 },
     hooks = {
-      pre_save = function(ctx)             -- ctx = { project, name, file }
+      pre_save = function(ctx)             -- ctx = { project, name, file, autosave }
         pcall(vim.cmd, "cclose")
       end,
     },
@@ -406,13 +465,14 @@ default is used.
   folders called `build` never share sessions. The picker shows the folder
   name plus a shortened path (`~/path/to/long…/projectA`).
 - Outside git a project is just "this folder": `<leader>sl` only lists it
-  from there, and the picker says so. `<leader>sa` lists and loads it from
+  from there, and the picker says so. `<leader>sA` lists and loads it from
   anywhere, because each session restores its own directory (`curdir`).
 - Each git **worktree** is its own project. That is deliberate: its files
   live at different paths.
 - The **active session** is the one this Neovim instance last saved or
-  loaded. It is marked `●`, pre-fills the save popup, and is what `autosave`
-  re-saves. It is per instance and not stored.
+  loaded. It is marked `●`, pre-fills the save popup, and is what
+  `resave_active` re-saves. It is per instance and not stored. `autosave`
+  does not change it.
 
 ## Data on disk
 
@@ -488,6 +548,8 @@ never fire `ColorScheme`.
 | `SessionMgrName` | `NormalFloat` | session names and ordinary cells |
 | `SessionMgrDefault` | `Constant` | the `default` session's name |
 | `SessionMgrActive` | `DiagnosticOk` | the `●` marking the active session |
+| `SessionMgrAutosaveOn` | `DiagnosticOk` | `on` in the picker footer's `s autosave` hint |
+| `SessionMgrAutosaveOff` | `DiagnosticWarn` | `off` in the picker footer's `s autosave` hint |
 | `SessionMgrDim` | `Comment` | created dates, zero counts, secondary text |
 | `SessionMgrNever` | `NonText` | `Never` |
 | `SessionMgrMatch` | `Search` | characters matched by the filter |
@@ -512,8 +574,9 @@ Borders follow `picker.border`, else your `'winborder'`, else `rounded`.
 ## Events and hooks
 
 `hooks.pre_save`, `post_save`, `pre_load`, `post_load` each receive
-`{ project = { key, root, label, is_git }, name, file }`. A hook that errors is
-reported and ignored; it never blocks a save.
+`{ project = { key, root, label, is_git }, name, file, autosave }`. `autosave`
+is `true` for [background autosaves](#autosave) and `false` otherwise. A hook
+that errors is reported and ignored; it never blocks a save.
 
 The same moments fire `User` autocommands with the same table in `ev.data`:
 
@@ -525,7 +588,8 @@ vim.api.nvim_create_autocmd("User", {
 ```
 
 Lua API: `require("session-mgr").save(name?)`, `.load(name?, on_done?)`,
-`.rename(old, new)`, `.delete(name)`, `.names()`, `.active()`.
+`.rename(old, new)`, `.delete(name)`, `.names()`, `.active()`,
+`.set_autosave(on)`, `.toggle_autosave()`.
 
 ## Troubleshooting
 
@@ -536,6 +600,8 @@ active session.
 
 - **`:SessionMgr` is not a command.** With `defaults.lazy = true` a spec
   needs a trigger: `cmd = { "SessionMgr" }`.
+- **Nothing is autosaved until I run a command.** The plugin is only loaded
+  on the first `:SessionMgr`. Add `event = "VeryLazy"` to the spec.
 - **Edits to the plugin do nothing.** `:checkhealth session-mgr` shows the
   loaded path; it should be `~/dev/session-mgr.nvim`. Check that checkout is
   on the branch you expect.

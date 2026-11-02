@@ -9,6 +9,8 @@ local validate = require "session-mgr.validate"
 
 local M = {}
 local TITLE = "session-mgr"
+--- Session name `autosave` writes to, so the file is <project>/autosave.vim.
+M.AUTOSAVE_NAME = "autosave"
 
 --- Messages go to a corner toast when there is a UI to draw it on, else to
 --- vim.notify (headless, or toast = false). Warnings and errors always show.
@@ -80,7 +82,9 @@ end
 
 --- @param project SessionMgrProject
 --- @param raw_name string
---- @param opts { silent: boolean|nil }|nil silent: no success message (autosave)
+--- @param opts { silent: boolean|nil, background: boolean|nil }|nil
+---   silent: no success message. background: an autosave; keep your windows
+---   open and leave the active session as it is.
 --- @return boolean ok, string|nil err
 function M.save(project, raw_name, opts)
   local cfg = config.get()
@@ -90,7 +94,8 @@ function M.save(project, raw_name, opts)
     return false, err
   end
   local file = paths.session_file(cfg.root, project.key, name)
-  local ctx = { project = project, name = name, file = file }
+  local background = opts and opts.background or false
+  local ctx = { project = project, name = name, file = file, autosave = background }
   if vim.fn.mkdir(vim.fs.dirname(file), "p") == 0 then
     err = "cannot create " .. vim.fs.dirname(file)
     notify("Not saved: " .. err, vim.log.levels.ERROR)
@@ -98,7 +103,9 @@ function M.save(project, raw_name, opts)
   end
 
   emit("pre_save", ctx)
-  local tree_was_open = close_special_windows()
+  -- :mksession already skips floats, quickfix and nofile windows. Closing them
+  -- first only keeps manual saves tidy, and a timer must not shut your windows.
+  local tree_was_open = not background and close_special_windows()
   local saved_ssop = vim.o.sessionoptions
   if cfg.sessionoptions then
     vim.o.sessionoptions = table.concat(cfg.sessionoptions, ",")
@@ -117,7 +124,9 @@ function M.save(project, raw_name, opts)
   if not stored then
     notify("Saved, but the index was not updated: " .. tostring(store_err), vim.log.levels.WARN)
   end
-  state.set_active(project, name)
+  if not background then
+    state.set_active(project, name)
+  end
   emit("post_save", ctx)
   if not (opts and opts.silent) then
     notify(("Saved %s\n%s"):format(vim.fn.fnamemodify(file, ":~"), reload_hint(name)))
@@ -125,16 +134,37 @@ function M.save(project, raw_name, opts)
   return true
 end
 
---- Re-save the ACTIVE session if `autosave` is on. Never creates a session:
---- with nothing active, or with the file gone, it does nothing.
+--- Re-save the ACTIVE session if `resave_active` is on. Never creates a
+--- session: with nothing active, or with the file gone, it does nothing.
 --- @return boolean saved
-function M.autosave()
+function M.resave_active()
   local cfg = config.get()
   local project, name = state.active_target()
-  if not (cfg.autosave and project and name) or not store.exists(cfg.root, project.key, name) then
+  if not (cfg.resave_active and project and name) or not store.exists(cfg.root, project.key, name) then
     return false
   end
   return (M.save(project, name, { silent = true }))
+end
+
+--- True when some listed buffer is a file. A start screen or an empty buffer
+--- is not worth a session, and saving it would replace a good autosave.vim.
+local function has_files()
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.bo[buf].buflisted and vim.bo[buf].buftype == "" and vim.api.nvim_buf_get_name(buf) ~= "" then
+      return true
+    end
+  end
+  return false
+end
+
+--- Write the current layout to this project's "autosave" session if
+--- `autosave` is on and a file is open.
+--- @return boolean saved
+function M.autosave()
+  if not (config.get().autosave and has_files()) then
+    return false
+  end
+  return (M.save(require("session-mgr.project").detect(), M.AUTOSAVE_NAME, { silent = true, background = true }))
 end
 
 --- Source `file`, after proving it lives under the sessions root: a session
@@ -166,6 +196,12 @@ function M.load(project, name, on_done)
     -- Switching away: keep the session being left up to date first. Skipped
     -- when reloading the active session itself, which would defeat "load".
     if not (state.active_in(project) == name) then
+      M.resave_active()
+    end
+    -- The layout a load is about to wipe goes to autosave.vim, so a wrong
+    -- load can be undone. Not when loading this project's autosave: that
+    -- would overwrite the very file being loaded.
+    if not (name == M.AUTOSAVE_NAME and project.key == require("session-mgr.project").detect().key) then
       M.autosave()
     end
     emit("pre_load", ctx)

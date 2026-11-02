@@ -167,6 +167,8 @@ function M.render(state, now, opts)
     if state.filter == "" then
       Line(row + 1, out).add("  Save one with :SessionMgr save", "SessionMgrDim").done()
     end
+    -- list_lines counts these two rows, so whatever comes next goes below them.
+    row = row + 2
   end
   for i = state.scroll_top, math.min(#items, state.scroll_top + state.height - 1) do
     local it, line = items[i], Line(row, out)
@@ -301,6 +303,13 @@ function M.footer(state, opts)
   for _, h in ipairs(hints) do
     chunks[#chunks + 1] = { h[1], "SessionMgrFooterKey" }
     chunks[#chunks + 1] = { " " .. h[2] .. "  ", "SessionMgrFooter" }
+    -- The autosave switch shows its state right after the "a" hint.
+    if h[1] == "a" and opts and opts.autosave ~= nil then
+      chunks[#chunks + 1] = { "s", "SessionMgrFooterKey" }
+      chunks[#chunks + 1] = { " autosave ", "SessionMgrFooter" }
+      chunks[#chunks + 1] = opts.autosave and { "on", "SessionMgrAutosaveOn" } or { "off", "SessionMgrAutosaveOff" }
+      chunks[#chunks + 1] = { "  ", "SessionMgrFooter" }
+    end
   end
   return chunks
 end

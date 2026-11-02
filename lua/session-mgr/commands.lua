@@ -16,6 +16,8 @@ local function report(ok, err, done)
   end
 end
 
+local AUTOSAVE_ARGS = { on = true, off = true, toggle = true }
+
 --- @type table<string, fun(args: string[], bang: boolean)>
 M.subcommands = {
   save = function(args, bang)
@@ -37,6 +39,17 @@ M.subcommands = {
   end,
   procs = function()
     require("session-mgr.ui.picker").open "procs"
+  end,
+  autosave = function(args)
+    local sm = require "session-mgr"
+    local arg = args[1] or "toggle"
+    if #args > 1 or not AUTOSAVE_ARGS[arg] then
+      return notify("Usage: :SessionMgr autosave [on|off|toggle]", vim.log.levels.ERROR)
+    end
+    if arg == "toggle" then
+      return sm.toggle_autosave()
+    end
+    sm.set_autosave(arg == "on")
   end,
   delete = function(args)
     if #args ~= 1 then
@@ -99,6 +112,9 @@ function M.complete(arglead, cmdline, _)
   local sub = (words[2] or ""):gsub("!$", "")
   if TAKES_NAME[sub] and (n == 3) then
     return starting_with(require("session-mgr").names(), arglead)
+  end
+  if sub == "autosave" and n == 3 then
+    return starting_with({ "off", "on", "toggle" }, arglead)
   end
   return {}
 end

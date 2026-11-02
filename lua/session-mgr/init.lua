@@ -10,25 +10,62 @@ local migrated = false
 local DEFAULT_KEYS = {
   { "<leader>ss", "save", "session save as" },
   { "<leader>sl", "load", "session load picker" },
-  { "<leader>sa", "all", "session picker, all projects" },
+  { "<leader>sa", "autosave", "session autosave on/off" },
+  { "<leader>sA", "all", "session picker, all projects" },
   { "<leader>sS", "save!", "session save default" },
   { "<leader>sL", "load!", "session load default" },
 }
+
+--- "300s" reads worse than "5m": whole minutes as minutes, else seconds.
+local function every(seconds)
+  return seconds % 60 == 0 and ("%dm"):format(seconds / 60) or ("%ds"):format(seconds)
+end
+
+--- Switch autosave for this nvim: starts or stops the timer, and the exit
+--- save follows the same flag. Not persisted; the next start uses `autosave`
+--- from your config again.
+--- @param on boolean
+--- @param opts { quiet: boolean|nil }|nil quiet: no message
+--- @return boolean on
+function M.set_autosave(on, opts)
+  local cfg = require("session-mgr.config").get()
+  cfg.autosave = on
+  local timer = require "session-mgr.autosave"
+  timer.stop()
+  if on and cfg.autosave_interval > 0 then
+    timer.start(cfg.autosave_interval * 1000)
+  end
+  if not (opts and opts.quiet) then
+    local when = cfg.autosave_interval > 0 and ("every %s, "):format(every(cfg.autosave_interval)) or ""
+    require("session-mgr.session").notify(
+      on and ("Autosave on: autosave.vim %son exit and before a load"):format(when) or "Autosave off"
+    )
+  end
+  return on
+end
+
+--- @return boolean on
+function M.toggle_autosave()
+  return M.set_autosave(not require("session-mgr.config").get().autosave)
+end
 
 --- @param opts table|nil user overrides, merged over config.defaults
 function M.setup(opts)
   local cfg = require("session-mgr.config").resolve(opts)
   migrated = false
   local group = vim.api.nvim_create_augroup("session-mgr", { clear = true })
-  if cfg.autosave then
-    vim.api.nvim_create_autocmd("VimLeavePre", {
-      group = group,
-      desc = "session-mgr: re-save the active session",
-      callback = function()
-        require("session-mgr.session").autosave()
-      end,
-    })
-  end
+  -- Always registered, since autosave can be switched on later with
+  -- set_autosave(). Each save checks its own option.
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    group = group,
+    desc = "session-mgr: write autosave.vim and re-save the active session",
+    callback = function()
+      local session = require "session-mgr.session"
+      session.resave_active()
+      session.autosave()
+    end,
+  })
+  M.set_autosave(cfg.autosave, { quiet = true })
   if cfg.keymaps then
     for _, k in ipairs(DEFAULT_KEYS) do
       vim.keymap.set("n", k[1], ("<cmd>SessionMgr %s<cr>"):format(k[2]), { desc = k[3] })
