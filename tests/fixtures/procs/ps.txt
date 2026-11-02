@@ -1,0 +1,13 @@
+      1       0 12000    1      100  900000 root                             systemd          /sbin/init
+    100       1  5000    1        0  800000 hoswoo                           bash             -bash
+    200     100  2964    1        0  524794 hoswoo                           nvim             nvim
+    201     200 9805404  5     1446  524794 hoswoo                           nvim             nvim --embed
+    210     201 283000  31        5  524000 hoswoo                           terraform-ls     terraform-ls serve
+    220     201 400000   7        9  524000 hoswoo                           MainThread       node /srv/u/.local/share/nvim/mason/bin/vtsls --stdio
+    221     220 917000  11       30  524000 hoswoo                           MainThread       /srv/u/.nvm/node --max-old-space-size=3072 tsserver.js
+    300     100  3000    1        0    1000 hoswoo                           nvim             nvim run.js
+    301     300 372000   5      217    1000 hoswoo                           nvim             nvim --embed run.js
+    400       1 50000    3        2   70000 hoswoo                           MainThread       node /srv/u/.local/share/nvim/mason/bin/bash-language-server start
+    401     400 14000   26        0   70000 hoswoo                           typos-lsp        /srv/u/.local/share/nvim/mason/bin/typos-lsp
+    500     100  6000    1        0    5000 hoswoo                           tmux: server     tmux new -s x
+    600       1 40000    1        0   60000 hoswoo                           nvim             nvim --headless --embed
