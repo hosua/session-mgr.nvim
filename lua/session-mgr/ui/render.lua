@@ -118,21 +118,11 @@ function M.render(state, now, opts)
   for _, chunk in ipairs(footer) do
     footer_w = footer_w + width(chunk[1])
   end
-  content = math.max(content, footer_w, opts.min_width or 0)
+  content = math.max(content, footer_w, M.tabs_width() + 14, opts.min_width or 0)
 
-  -- Row 0: scope tabs, with the match count right-aligned.
-  local tabs = Line(0, out)
-  tabs.add " "
-  for _, tab in ipairs { { "project", " This project " }, { "all", " All projects " } } do
-    local on = state.scope == tab[1]
-    tabs.add(tab[2], on and "SessionMgrScopeOn" or "SessionMgrScopeOff", { kind = "scope", id = tab[1] })
-    tabs.add " "
-  end
   local counter = state.filter ~= "" and ("%d of %d"):format(count, total)
     or ("%d session%s"):format(total, total == 1 and "" or "s")
-  tabs.add((" "):rep(math.max(1, content - width(tabs.text) - width(counter) - 1)))
-  tabs.add(counter, "SessionMgrDim")
-  tabs.done()
+  M.tabs(out, state.scope, content, counter)
 
   -- Row 1: filter.
   local filter = Line(1, out)
@@ -249,6 +239,36 @@ function M.render(state, now, opts)
   out.footer = footer
   return out
 end
+
+M.TABS = { { "project", " This project " }, { "all", " All projects " }, { "procs", " Processes " } }
+
+--- Row 0, shared by every tab: the clickable tab strip and a right-aligned
+--- counter.
+--- @param active "project"|"all"|"procs"
+function M.tabs(out, active, content, counter)
+  local tabs = Line(0, out)
+  tabs.add " "
+  for _, tab in ipairs(M.TABS) do
+    tabs.add(tab[2], active == tab[1] and "SessionMgrScopeOn" or "SessionMgrScopeOff", { kind = "scope", id = tab[1] })
+    tabs.add " "
+  end
+  tabs.add((" "):rep(math.max(1, content - width(tabs.text) - width(counter) - 1)))
+  tabs.add(counter, "SessionMgrDim")
+  tabs.done()
+  return width(tabs.text)
+end
+
+--- Width the tab strip needs before its counter.
+function M.tabs_width()
+  local w = 1
+  for _, tab in ipairs(M.TABS) do
+    w = w + width(tab[2]) + 1
+  end
+  return w
+end
+
+M.Line = Line
+M.truncate = truncate
 
 --- @return string
 function M.title(state, opts)

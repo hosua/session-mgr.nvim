@@ -31,6 +31,11 @@ M.LINKS = {
   SessionMgrDanger = "DiagnosticError",
   SessionMgrPreviewKey = "Identifier",
   SessionMgrPreviewPath = "Directory",
+  SessionMgrProcTree = "Comment",
+  SessionMgrProcCmd = "NormalFloat",
+  SessionMgrProcBig = "DiagnosticWarn",
+  SessionMgrMarked = "DiagnosticInfo",
+  SessionMgrMarkedLine = "Visual",
 }
 
 M.WINHL =

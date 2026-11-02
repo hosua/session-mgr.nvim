@@ -35,6 +35,9 @@ M.subcommands = {
   all = function()
     require("session-mgr.ui.picker").open "all"
   end,
+  procs = function()
+    require("session-mgr.ui.picker").open "procs"
+  end,
   delete = function(args)
     if #args ~= 1 then
       return notify("Usage: :SessionMgr delete {name}", vim.log.levels.ERROR)

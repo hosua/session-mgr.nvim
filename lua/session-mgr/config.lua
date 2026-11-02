@@ -46,6 +46,17 @@ M.defaults = {
     refresh_ms = 1000, -- re-render relative times while open; 0 = never
     default_sort = { key = "name", dir = "asc" }, -- name|uses|last_used|updated|created
   },
+  -- The Processes tab of the picker (:SessionMgr procs). Linux only: it reads /proc.
+  procs = {
+    refresh_ms = 2000, -- re-sample while the tab is showing; 0 = only on `r`
+    -- "pss": proportional memory from /proc/<pid>/smaps_rollup, so shared
+    -- libraries are counted once and tree totals add up. "rss": what htop
+    -- shows as RES; cheaper, but shared pages count in every process.
+    memory = "pss",
+    default_sort = { key = "tree", dir = "desc" }, -- pid|tree|own|threads|cpu|command
+    orphans = true, -- list mason language servers whose nvim is gone
+    big_mb = 1024, -- memory at or above this is drawn as a warning
+  },
   save_prompt = {
     width = 60,
     max_list_height = 10,
@@ -76,6 +87,7 @@ M.defaults = {
 }
 
 local SORT_KEYS = { name = true, uses = true, last_used = true, updated = true, created = true }
+local PROC_SORT_KEYS = { pid = true, tree = true, own = true, threads = true, cpu = true, command = true }
 
 local resolved
 
@@ -149,6 +161,24 @@ function M.resolve(opts)
       problems[#problems + 1] =
         "picker.default_sort must be { key = name|uses|last_used|updated|created, dir = asc|desc }"
       cfg.picker.default_sort = vim.deepcopy(M.defaults.picker.default_sort)
+    end
+  end
+  if type(cfg.procs) == "table" then
+    local pc = cfg.procs
+    if type(pc.memory) == "string" and pc.memory ~= "pss" and pc.memory ~= "rss" then
+      problems[#problems + 1] = ("procs.memory must be pss|rss, got %s"):format(pc.memory)
+      pc.memory = M.defaults.procs.memory
+    end
+    local sort = pc.default_sort
+    if type(sort) == "table" and not (PROC_SORT_KEYS[sort.key] and (sort.dir == "asc" or sort.dir == "desc")) then
+      problems[#problems + 1] = "procs.default_sort must be { key = pid|tree|own|threads|cpu|command, dir = asc|desc }"
+      pc.default_sort = vim.deepcopy(M.defaults.procs.default_sort)
+    end
+    for _, k in ipairs { "refresh_ms", "big_mb" } do
+      if type(pc[k]) == "number" and pc[k] < 0 then
+        problems[#problems + 1] = ("procs.%s must be >= 0, got %s"):format(k, pc[k])
+        pc[k] = M.defaults.procs[k]
+      end
     end
   end
   if type(cfg.root) == "string" then
