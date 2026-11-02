@@ -26,6 +26,7 @@ last-used / updated / created times.
 - [Install](#install)
 - [Quick start](#quick-start)
 - [Commands](#commands)
+- [Processes tab](#processes-tab)
 - [Keymaps](#keymaps)
 - [Configuration](#configuration)
 - [How projects and sessions are identified](#how-projects-and-sessions-are-identified)
@@ -99,6 +100,7 @@ One command, with completion for subcommands and session names.
 | `:SessionMgr load {name}` | Load `{name}`. |
 | `:SessionMgr load!` | Load the `default` session. |
 | `:SessionMgr all` | Open the picker for all projects. |
+| `:SessionMgr procs` | Open the picker straight on the Processes tab. |
 | `:SessionMgr rename {old} {new}` | Rename; use count and times follow the session. Refuses to overwrite. |
 | `:SessionMgr delete {name}` | Delete the file and its record. No prompt (the picker's `d` asks). |
 
@@ -119,6 +121,65 @@ buffer exists, since it could not be written:
 ╰ q cancel ──────────────────────────────────────────────╯
 ```
 
+## Processes tab
+
+The picker's tab strip is `[This project] [All projects] [Processes]`. The
+Processes tab answers "which of my Neovims is eating the RAM, and can I kill
+it?" without leaving the editor. Open it with `:SessionMgr procs`, or press
+`<Tab>` in the picker. It is Linux only: it reads `/proc` and runs procps
+`ps`. Elsewhere the tab shows a message instead.
+
+It lists every running nvim as a tree:
+
+- A root is an nvim whose parent is not an nvim, which is the TUI client.
+- Below it is the `nvim --embed` server, and below that its language servers
+  and their children.
+- Mason language servers whose nvim is gone are grouped under an
+  "orphaned LSPs" root (`procs.orphans`).
+- The tree that contains the nvim you are typing in is marked with a green `●`.
+
+Columns:
+
+- `PID`.
+- `Tree`: memory of the process plus everything below it.
+- `PSS` (or `RSS` with `procs.memory = "rss"`): the process's own memory.
+  PSS comes from `/proc/<pid>/smaps_rollup`. When that file is unreadable for
+  a process, its RSS is shown with a `*` instead.
+- `Thr`: thread count.
+- `CPU%`: usage since the previous sample, `…` on the first sample.
+- `Command`: tree glyphs, a `[+]` / `[-]` fold box, the arguments, and the cwd
+  for root nvims.
+
+The default sort is `Tree` descending. Siblings are sorted at every level and
+children stay under their parent. Roots start collapsed. `/` filters by
+command line or cwd; a match keeps its ancestors and its whole subtree.
+
+`x` and `X` change real processes, so both open a red confirm that lists each
+pid, its command, its cwd and the memory that would be freed. Press the same
+key again to confirm.
+
+- `x` sends `SIGTERM` to the selected process only. For an nvim that is a
+  clean exit, and it stops its own language servers.
+- `X` sends `SIGKILL` to the process and every descendant, children first.
+  Unsaved buffers in those nvims are lost.
+- With marks (`<Space>`), both act on every marked row instead.
+- If the targets include the nvim you are typing in (its own pid or its TUI
+  parent), a second confirm (`y`) is required.
+- Each pid is re-checked against its start time before it is signalled, so a
+  pid that was reused by another process in the meantime is skipped.
+
+The list re-samples every `procs.refresh_ms` while the tab is visible. It
+pauses while a confirm is open, so rows do not move under you. `r` samples
+now. The preview pane (`p`) shows pid and parent, user, running time,
+threads, cpu, PSS / RSS / swap, the tree total, cwd, the full command, and
+what `x` and `X` would hit.
+
+RSS counts shared pages in every process that maps them, so RSS tree totals
+overstate. That is why PSS is the default. PSS costs a few milliseconds of
+kernel time per sample for very large processes. If that ever matters, set
+`procs.memory = "rss"`. `:checkhealth session-mgr` has a "processes tab"
+section that says whether `/proc` and `ps` were found.
+
 ## Keymaps
 
 The plugin installs **no** global keymaps unless `keymaps = true`. Suggested
@@ -131,6 +192,13 @@ map("n", "<leader>sl", "<cmd>SessionMgr load<cr>",  { desc = "session load (this
 map("n", "<leader>sa", "<cmd>SessionMgr all<cr>",   { desc = "session load (all projects)" })
 map("n", "<leader>sS", "<cmd>SessionMgr save!<cr>", { desc = "session save default" })
 map("n", "<leader>sL", "<cmd>SessionMgr load!<cr>", { desc = "session load default" })
+```
+
+`keymaps = true` does not install a key for the Processes tab. If you want
+one:
+
+```lua
+map("n", "<leader>sP", "<cmd>SessionMgr procs<cr>", { desc = "session processes" })
 ```
 
 Keep the right-hand side a **command string**. The plugin finds your load key
@@ -173,6 +241,25 @@ the list while your chosen sort still orders it.
 Times: `Just now` under a minute, then `5m 57s ago`, `1h 5m ago`, `1h ago`;
 from one day on the local date and time, `2026-09-19 07:59`. `Created` is a
 date. They refresh once a second while the picker is open.
+
+On the Processes tab the same keys move, sort, filter and close, with these
+differences. Sort keys are `1` … `6` (pid, tree, own memory, threads, cpu,
+command), `/` filters by command line or cwd, `r` refreshes instead of
+renaming, and `d` does nothing.
+
+| Keys | Action |
+|---|---|
+| `<Tab>` `<S-Tab>`, or click a tab | cycle `This project`, `All projects`, `Processes` (`a` still toggles the two session tabs) |
+| `<CR>` `za`, double-click, click the `[+]` / `[-]` box | fold / unfold the row |
+| `zo` `zc` | open / close the row |
+| `zR` `zM` | open / close every row |
+| `<Space>` | mark the row and move down |
+| `x` | `SIGTERM` the selected process (or every marked one), after a confirm |
+| `X` | `SIGKILL` the process and everything below it (or every marked one), after a confirm |
+| `y` | in the second confirm, when the targets include your own nvim |
+| `r` | refresh now |
+| `<C-l>` | clear the filter and the marks |
+| `p` | show / hide the preview pane |
 
 ### In the save popup
 
@@ -236,6 +323,17 @@ require("session-mgr").setup {
     hover = true, -- highlight the row under the mouse (sets 'mousemoveevent' while open)
     refresh_ms = 1000, -- re-render relative times while open; 0 = never
     default_sort = { key = "name", dir = "asc" }, -- name|uses|last_used|updated|created
+  },
+  -- The Processes tab of the picker (:SessionMgr procs). Linux only: it reads /proc.
+  procs = {
+    refresh_ms = 2000, -- re-sample while the tab is showing; 0 = only on `r`
+    -- "pss": proportional memory from /proc/<pid>/smaps_rollup, so shared
+    -- libraries are counted once and tree totals add up. "rss": what htop
+    -- shows as RES; cheaper, but shared pages count in every process.
+    memory = "pss",
+    default_sort = { key = "tree", dir = "desc" }, -- pid|tree|own|threads|cpu|command
+    orphans = true, -- list mason language servers whose nvim is gone
+    big_mb = 1024, -- memory at or above this is drawn as a warning
   },
   save_prompt = {
     width = 60,
@@ -403,6 +501,11 @@ never fire `ColorScheme`.
 | `SessionMgrDanger` | `DiagnosticError` | destructive dialogs and choices, error toasts |
 | `SessionMgrPreviewKey` | `Identifier` | field names in the preview |
 | `SessionMgrPreviewPath` | `Directory` | the cwd in the preview |
+| `SessionMgrProcTree` | `Comment` | tree glyphs and fold boxes on the Processes tab |
+| `SessionMgrProcCmd` | `NormalFloat` | the command of a non-nvim process |
+| `SessionMgrProcBig` | `DiagnosticWarn` | memory at or above `procs.big_mb` |
+| `SessionMgrMarked` | `DiagnosticInfo` | the `+` mark and the `N marked` line |
+| `SessionMgrMarkedLine` | `Visual` | the whole line of a marked row |
 
 Borders follow `picker.border`, else your `'winborder'`, else `rounded`.
 

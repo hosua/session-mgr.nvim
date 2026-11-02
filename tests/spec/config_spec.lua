@@ -78,3 +78,23 @@ describe("config", function()
     eq(vim.fs.normalize "~/sess", cfg.root)
   end)
 end)
+
+describe("config procs", function()
+  local config = require "session-mgr.config"
+  local notify = vim.notify
+  vim.notify = function() end
+  it("rejects a bad memory mode, sort and negative numbers", function()
+    local cfg, problems = config.resolve { procs = { memory = "vss", default_sort = { key = "x" }, refresh_ms = -1 } }
+    eq("pss", cfg.procs.memory)
+    eq({ key = "tree", dir = "desc" }, cfg.procs.default_sort)
+    eq(2000, cfg.procs.refresh_ms)
+    eq(3, #problems)
+  end)
+  it("accepts rss", function()
+    local cfg, problems = config.resolve { procs = { memory = "rss" } }
+    eq("rss", cfg.procs.memory)
+    eq({}, problems)
+  end)
+  vim.notify = notify
+  config.resolve()
+end)

@@ -27,6 +27,8 @@ local M = {}
 --- @field approx boolean own is RSS because PSS was unreadable
 --- @field cpu number|nil percent of one core since the previous sample
 --- @field cwd string|nil
+--- @field swap integer|nil kB
+--- @field start integer|nil start time in clock ticks since boot, to spot pid reuse
 --- @field children SessionMgrProcNode[]
 --- @field parent SessionMgrProcNode|nil
 --- @field depth integer 0 for roots
@@ -77,6 +79,8 @@ function M.build(sample, opts)
       approx = use_pss and pss == nil,
       cpu = cpu_of(r.pid),
       cwd = sample.cwd and sample.cwd[r.pid] or nil,
+      swap = sample.swap and sample.swap[r.pid] or nil,
+      start = sample.stat and sample.stat[r.pid] and sample.stat[r.pid].start or nil,
       children = {},
       parent = parent,
       depth = parent and parent.depth + 1 or 0,

@@ -9,6 +9,8 @@ local input = require "session-mgr.ui.input"
 local layout = require "session-mgr.ui.layout"
 local model = require "session-mgr.ui.model"
 local preview = require "session-mgr.ui.preview"
+local procs_model = require "session-mgr.ui.procs_model"
+local procs_tab = require "session-mgr.ui.procs_tab"
 local render = require "session-mgr.ui.render"
 local session = require "session-mgr.session"
 local sessfile = require "session-mgr.sessfile"
@@ -39,6 +41,7 @@ function M.close()
     p.timer:stop()
     p.timer:close()
   end
+  procs_tab.deactivate(p)
   pcall(vim.api.nvim_del_augroup_by_id, p.augroup)
   if p.saved_mousemoveevent ~= nil then
     vim.o.mousemoveevent = p.saved_mousemoveevent
@@ -55,6 +58,9 @@ local function redraw()
   local p = P
   if not p or not float.is_open(p.float) then
     return
+  end
+  if p.tab == "procs" then
+    return procs_tab.redraw(p)
   end
   local cfg = config.get().picker
   local opts = { home = vim.env.HOME, all_key = hints.key_for "all" }
@@ -115,22 +121,66 @@ local function redraw()
 end
 M.redraw = redraw
 
+--- Actions go to whichever tab is showing; both models share the
+--- navigation, sort and filter vocabulary.
 local function dispatch(action)
-  if P then
-    P.state = model.reduce(P.state, action)
-    redraw()
+  if not P then
+    return
   end
+  if P.tab == "procs" then
+    P.procs = procs_model.reduce(P.procs, action)
+  else
+    P.state = model.reduce(P.state, action)
+  end
+  redraw()
 end
 M.dispatch = dispatch
+
+local function cur_state()
+  return P.tab == "procs" and P.procs or P.state
+end
+
+local TAB_ORDER = { "project", "all", "procs" }
+
+--- @param tab "project"|"all"|"procs"
+local function set_tab(tab)
+  if not P or tab == P.tab then
+    return
+  end
+  local p = P
+  p.hover_row = nil
+  if tab == "procs" then
+    p.tab = "procs"
+    procs_tab.activate(p)
+  else
+    if p.tab == "procs" then
+      procs_tab.deactivate(p)
+    end
+    p.tab = tab
+    p.state = model.reduce(p.state, { type = "set_rows", rows = rows_for(tab, p.state.project), scope = tab })
+  end
+  redraw()
+end
+M.set_tab = set_tab
+
+local function cycle_tab(delta)
+  for i, t in ipairs(TAB_ORDER) do
+    if t == P.tab then
+      return set_tab(TAB_ORDER[(i - 1 + delta) % #TAB_ORDER + 1])
+    end
+  end
+end
 
 local function reload_rows(scope)
   if P then
     scope = scope or P.state.scope
+    P.tab = scope
     dispatch { type = "set_rows", rows = rows_for(scope, P.state.project), scope = scope }
   end
 end
 
 --- Run `fn` with a child float open: the picker must not close on WinLeave.
+--- `fn` gets a `done` callback that hands focus back to the picker.
 local function with_child(fn)
   if P then
     P.child = true
@@ -144,6 +194,7 @@ local function with_child(fn)
     end)
   end
 end
+M.with_child = with_child
 
 local function load_current()
   local row = P and model.current(P.state)
@@ -267,9 +318,9 @@ local function focus_filter()
       return
     end
     p.child = false
-    p.state = model.reduce(p.state, { type = "focus_filter", focused = false })
+    dispatch { type = "focus_filter", focused = false }
     if not keep then
-      p.state = model.reduce(p.state, { type = "set_filter", text = "" })
+      dispatch { type = "set_filter", text = "" }
     end
     if float.is_open(p.float) then
       vim.api.nvim_set_current_win(p.float.win)
@@ -280,7 +331,7 @@ local function focus_filter()
     rect = { row = 1, col = 3, width = math.max(10, vim.api.nvim_win_get_width(p.float.win) - 4), height = 1 },
     relative_win = p.float.win,
     border = "none",
-    text = p.state.filter,
+    text = cur_state().filter,
     on_change = function(text)
       dispatch { type = "set_filter", text = text }
     end,
@@ -309,7 +360,7 @@ end
 
 local function show_help()
   with_child(function(done)
-    require("session-mgr.ui.help").open(done)
+    require("session-mgr.ui.help").open(done, P.tab == "procs" and "procs" or "sessions")
   end)
 end
 
@@ -330,13 +381,18 @@ local function on_click(double)
   if region.kind == "sort" then
     dispatch { type = "set_sort", key = region.id }
   elseif region.kind == "scope" then
-    if region.id ~= P.state.scope then
-      reload_rows(region.id)
-    end
+    set_tab(region.id)
+  elseif region.kind == "fold" then
+    dispatch { type = "goto", index = region.id }
+    dispatch { type = "toggle_fold" }
   elseif region.kind == "row" then
     dispatch { type = "goto", index = region.id }
     if double then
-      load_current()
+      if P.tab == "procs" then
+        dispatch { type = "toggle_fold" }
+      else
+        load_current()
+      end
     end
   end
 end
@@ -378,27 +434,84 @@ local function set_keymaps(buf)
   map({ "l", "<Right>" }, act { type = "cycle_sort", delta = 1 })
   map({ "h", "<Left>" }, act { type = "cycle_sort", delta = -1 })
   map("o", act { type = "reverse" })
-  for i, key in ipairs(model.SORT_KEYS) do
-    map(tostring(i), act { type = "set_sort", key = key })
+  for i = 1, math.max(#model.SORT_KEYS, #procs_model.SORT_KEYS) do
+    map(tostring(i), function()
+      local keys = P.tab == "procs" and procs_model.SORT_KEYS or model.SORT_KEYS
+      if keys[i] then
+        dispatch { type = "set_sort", key = keys[i] }
+      end
+    end)
   end
   map("a", function()
-    reload_rows(P.state.scope == "all" and "project" or "all")
+    set_tab(P.tab == "project" and "all" or "project")
   end)
   map("<Tab>", function()
-    reload_rows(P.state.scope == "all" and "project" or "all")
+    cycle_tab(1)
+  end)
+  map("<S-Tab>", function()
+    cycle_tab(-1)
   end)
   map("/", focus_filter)
-  map("<C-l>", act { type = "set_filter", text = "" })
-  map("<CR>", load_current)
-  map("r", rename_current)
-  map("d", delete_current)
+  -- On a session tab these act on sessions; on the Processes tab, on processes.
+  local function per_tab(sessions, procs)
+    return function()
+      if P and P.tab == "procs" then
+        procs()
+      elseif P then
+        sessions()
+      end
+    end
+  end
+  local function noop() end
+  local function procs_act(action)
+    return per_tab(noop, function()
+      dispatch(action)
+    end)
+  end
+  map("<C-l>", function()
+    dispatch { type = "set_filter", text = "" }
+    if P and P.tab == "procs" then
+      dispatch { type = "clear_marks" }
+    end
+  end)
+  map(
+    "<CR>",
+    per_tab(load_current, function()
+      dispatch { type = "toggle_fold" }
+    end)
+  )
+  map(
+    "r",
+    per_tab(rename_current, function()
+      procs_tab.refresh(P)
+    end)
+  )
+  map("d", per_tab(delete_current, noop))
+  map("za", procs_act { type = "toggle_fold" })
+  map("zo", procs_act { type = "open_fold" })
+  map("zc", procs_act { type = "close_fold" })
+  map("zR", procs_act { type = "open_all" })
+  map("zM", procs_act { type = "close_all" })
+  map("<Space>", procs_act { type = "toggle_mark" })
+  map(
+    "x",
+    per_tab(noop, function()
+      procs_tab.kill(P, "term")
+    end)
+  )
+  map(
+    "X",
+    per_tab(noop, function()
+      procs_tab.kill(P, "kill_tree")
+    end)
+  )
   map("p", function()
     P.show_preview = not P.show_preview
     redraw()
   end)
   map("?", show_help)
   map({ "q", "<Esc>" }, function()
-    if P and P.state.filter ~= "" then
+    if P and cur_state().filter ~= "" then
       dispatch { type = "set_filter", text = "" } -- first <Esc> clears the filter
     else
       M.close()
@@ -417,7 +530,7 @@ local function set_keymaps(buf)
   end
 end
 
---- @param scope "project"|"all"
+--- @param scope "project"|"all"|"procs"
 function M.open(scope)
   M.close()
   require("session-mgr").ensure_migrated()
@@ -426,10 +539,11 @@ function M.open(scope)
   local f = float.open { rect = float.centered(60, 8), title = "", footer = "" }
   P = {
     float = f,
+    tab = scope == "procs" and "project" or scope,
     state = model.new {
-      scope = scope,
+      scope = scope == "procs" and "project" or scope,
       project = project,
-      rows = rows_for(scope, project),
+      rows = rows_for(scope == "all" and "all" or "project", project),
       sort = cfg.picker.default_sort,
       default_name = cfg.default_name,
       active = state_mod.active(),
@@ -470,13 +584,17 @@ function M.open(scope)
       cfg.picker.refresh_ms,
       cfg.picker.refresh_ms,
       vim.schedule_wrap(function()
-        if P == p and not p.child then
+        if P == p and not p.child and p.tab ~= "procs" then
           redraw()
         end
       end)
     )
   end
-  redraw()
+  if scope == "procs" then
+    set_tab "procs"
+  else
+    redraw()
+  end
   return p
 end
 

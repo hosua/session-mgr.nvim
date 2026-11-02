@@ -76,6 +76,14 @@ function M.check()
     end
   end
 
+  h.start "session-mgr: processes tab"
+  local ok_procs, why = require("session-mgr.procs.collect").supported()
+  if ok_procs then
+    h.ok("/proc and ps found; memory shown as " .. cfg.procs.memory:upper())
+  else
+    h.warn(why)
+  end
+
   h.start "session-mgr: editor"
   h.info(
     "sessionoptions while saving: "
