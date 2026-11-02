@@ -178,6 +178,9 @@ Details that matter:
   automatically loaded. You can start a new session with <key>`. `<key>` is
   whatever you mapped to `<cmd>SessionMgr new<cr>`, else `:SessionMgr new`.
   To opt out, set `autosave = false` or start nvim with a file.
+
+  ![Plain nvim in a project with an autosave.vim: the saved file is open and a notice says the last autosaved session was loaded and that a new one starts with the new-session key](docs/media/autoload.png)
+
 - `:SessionMgr new` starts empty. It asks about unsaved buffers and running
   terminals first (`write all & clear`, `discard & clear`; cancel keeps
   everything). Then it re-saves the active session if `resave_active` is on,
@@ -186,6 +189,9 @@ Details that matter:
   `autosave.vim`, so `:SessionMgr load autosave` brings it back until the
   next autosave overwrites it. It ends with `New session: nothing open. Save
   it with <save key or :SessionMgr save>`.
+
+  ![After the new-session key: an empty [No Name] buffer and the notice "New session: nothing open. Save it with the save key"](docs/media/new-session.png)
+
 - The timer, the exit save and the startup autoload need `setup()` to run at
   startup. See [Install](#install) for the lazy.nvim trigger.
 
@@ -197,6 +203,9 @@ answers `Autosave on: autosave.vim every 5m, on exit and before a load` or
 `Autosave off`. The picker toggles silently, because a toast would cover its
 title. Its footer shows `s autosave on` (green) or `s autosave off` (yellow)
 right after the `a` hint.
+
+![The load picker with five sessions and the footer reading s autosave on, with on in green](docs/media/picker-autosave-on.png)
+![The same picker after pressing s: the footer reads s autosave off, with off in yellow, and no toast covers the picker](docs/media/picker-autosave-off.png)
 
 ## Processes tab
 
@@ -663,3 +672,6 @@ The UI is split so almost all of it is testable without a screen:
 `ui/model` (`reduce(state, action)`) and `ui/render` (state → lines,
 byte-accurate highlight spans, clickable regions) are pure; only `ui/float`
 creates windows.
+
+The images under `docs/media/` are generated. `bash docs/tapes/capture.sh`
+regenerates them (needs vhs).
