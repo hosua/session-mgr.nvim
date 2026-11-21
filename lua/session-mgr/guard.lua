@@ -63,7 +63,7 @@ function M.ask(loss, cb, verb)
   local n = #loss.modified + #loss.unnamed
   local title = n > 0 and ("%d unsaved buffer%s"):format(n, n == 1 and "" or "s")
     or ("%d running terminal%s"):format(#loss.terminals, #loss.terminals == 1 and "" or "s")
-  require("session-mgr.ui.confirm").open {
+  require("session-mgr.ui.style").confirm {
     title = title,
     danger = true,
     lines = lines,

@@ -46,6 +46,12 @@ All under `~/.config/nvim/.claude/skills/nvim-create-and-integrate-plugin/script
 - `sync_workflow.sh <repo>`: copies the agents and this block.
 - `secrets_sweep.sh`, `preflight.sh`, `scaffold.sh`: as in the skill.
 
+## Shared dependencies (both agents)
+
+- Layout follows nvim-lua/nvim-lua-plugin-template (`~/.claude/rules/common/nvim-plugin-template.md`). A plugin that drifts gets a `refactor/template-layout` PR with no behaviour change.
+- Use plenary.nvim (`plenary.path`, `plenary.job`, `plenary.async`, `plenary.scandir`, `plenary.busted`) wherever it covers the job, and declare it in the lazy spec `dependencies`.
+- Every float, popup and key-legend list comes from `popup.nvim` (`~/dev/hosua/nvim/popup.nvim`). Never copy window or legend code into a plugin. Tester: FAIL a branch that does.
+
 ## Rules that do not bend
 
 - Branches are `feature/<slug>` or `fix/<slug>`; no worktrees, no stash.

@@ -21,6 +21,12 @@ you report the failure, where it is, and the fix you would make.
 
 `S=~/.config/nvim/.claude/skills/nvim-create-and-integrate-plugin/scripts`
 
+## Shared dependencies (both agents)
+
+- Layout follows nvim-lua/nvim-lua-plugin-template (`~/.claude/rules/common/nvim-plugin-template.md`). A plugin that drifts gets a `refactor/template-layout` PR with no behaviour change.
+- Use plenary.nvim (`plenary.path`, `plenary.job`, `plenary.async`, `plenary.scandir`, `plenary.busted`) wherever it covers the job, and declare it in the lazy spec `dependencies`.
+- Every float, popup and key-legend list comes from `popup.nvim` (`~/dev/hosua/nvim/popup.nvim`). Never copy window or legend code into a plugin. Tester: FAIL a branch that does.
+
 ## 1. Gates
 
 `$S/gates.sh --live <repo>` from a clean understanding of the branch (`git -C <repo> log

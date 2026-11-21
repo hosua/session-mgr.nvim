@@ -13,6 +13,13 @@ function M.check()
   -- Which copy is loaded matters when a dev checkout and a lazy clone coexist.
   local src = debug.getinfo(require("session-mgr").setup, "S").source:gsub("^@", "")
   h.info("loaded from " .. vim.fn.fnamemodify(src, ":~"))
+  for _, mod in ipairs { "popup", "plenary" } do
+    if pcall(require, mod) then
+      h.ok(mod .. ".nvim found")
+    else
+      h.error(mod .. ".nvim not found", { "Add it to the lazy spec dependencies of session-mgr.nvim" })
+    end
+  end
   if vim.fn.executable "git" == 1 then
     h.ok "git found (sessions are keyed by the git root)"
   else

@@ -1,5 +1,6 @@
 --- `?` in the picker: every key, grouped.
-local float = require "session-mgr.ui.float"
+local float = require "popup.float"
+local ui = require "session-mgr.ui.style"
 
 local M = {}
 
@@ -88,53 +89,21 @@ function M.sections(tab)
 end
 
 function M.build(tab)
-  local out = { lines = {}, spans = {}, line_hl = {} }
-  local keyw = 0
   local sections = M.sections(tab)
-  for _, s in ipairs(sections) do
-    for _, k in ipairs(s[2]) do
-      keyw = math.max(keyw, vim.fn.strdisplaywidth(k[1]))
-    end
-  end
-  for i, s in ipairs(sections) do
-    if i > 1 then
-      out.lines[#out.lines + 1] = ""
-    end
-    out.lines[#out.lines + 1] = " " .. s[1]
-    out.spans[#out.spans + 1] = { row = #out.lines - 1, col_start = 1, col_end = 1 + #s[1], hl = "SessionMgrHeader" }
-    for _, k in ipairs(s[2]) do
-      local pad = (" "):rep(keyw - vim.fn.strdisplaywidth(k[1]))
-      out.lines[#out.lines + 1] = "   " .. k[1] .. pad .. "   " .. k[2]
-      out.spans[#out.spans + 1] =
-        { row = #out.lines - 1, col_start = 3, col_end = 3 + #k[1], hl = "SessionMgrFooterKey" }
-      local desc_at = #out.lines[#out.lines] - #k[2]
-      out.spans[#out.spans + 1] =
-        { row = #out.lines - 1, col_start = desc_at, col_end = #out.lines[#out.lines], hl = "SessionMgrFooter" }
-    end
-  end
   -- What the symbols in the key column mean.
-  out.lines[#out.lines + 1] = ""
-  out.lines[#out.lines + 1] = " How to read this list"
-  out.spans[#out.spans + 1] = { row = #out.lines - 1, col_start = 1, col_end = 22, hl = "SessionMgrHeader" }
-  local legend = M.LEGEND[tab or "all"] or M.LEGEND.all
-  for _, item in ipairs(legend) do
-    local pad = (" "):rep(keyw - vim.fn.strdisplaywidth(item[1]))
-    out.lines[#out.lines + 1] = "   " .. item[1] .. pad .. "   " .. item[2]
-    local row, line = #out.lines - 1, out.lines[#out.lines]
-    out.spans[#out.spans + 1] = { row = row, col_start = 3, col_end = 3 + #item[1], hl = "SessionMgrFooterKey" }
-    out.spans[#out.spans + 1] = { row = row, col_start = #line - #item[2], col_end = #line, hl = "SessionMgrFooter" }
-  end
-  out.width = 0
-  for _, l in ipairs(out.lines) do
-    out.width = math.max(out.width, vim.fn.strdisplaywidth(l) + 2)
-  end
-  return out
+  sections[#sections + 1] = { "How to read this list", M.LEGEND[tab or "all"] or M.LEGEND.all }
+  local lines, spans = require("popup.legend").help(sections, {
+    title_hl = "SessionMgrHeader",
+    key_hl = "SessionMgrFooterKey",
+    desc_hl = "SessionMgrFooter",
+  })
+  return { lines = lines, spans = spans, line_hl = {}, width = require("popup.legend").width(lines, 2) }
 end
 
 function M.open(on_close, tab)
   local out = M.build(tab)
-  local f = float.open { rect = float.centered(out.width, #out.lines), title = " session-mgr keys ", zindex = 80 }
-  float.paint(f, out)
+  local f = ui.open { rect = ui.centered(out.width, #out.lines), title = " session-mgr keys ", zindex = 80 }
+  ui.paint(f, out)
   local closed = false
   local function close()
     if not closed then

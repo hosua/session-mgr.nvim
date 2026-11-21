@@ -2,8 +2,8 @@
 --- All decisions live in ui/model and ui/render; this file turns keys and
 --- mouse events into actions, repaints, and runs load / rename / delete.
 local config = require "session-mgr.config"
-local confirm = require "session-mgr.ui.confirm"
-local float = require "session-mgr.ui.float"
+local float = require "popup.float"
+local ui = require "session-mgr.ui.style"
 local hints = require "session-mgr.hints"
 local input = require "session-mgr.ui.input"
 local layout = require "session-mgr.ui.layout"
@@ -71,7 +71,7 @@ local function redraw()
   local out = render.render(p.state, os.time(), opts)
   local rects = layout.compute(
     { width = out.width, list_lines = out.list_lines, chrome = render.CHROME_LINES + out.chrome_bottom },
-    float.editor(),
+    ui.editor(),
     vim.tbl_extend("force", cfg, { preview = cfg.preview and p.show_preview })
   )
   if rects.list_height ~= p.state.height then
@@ -79,13 +79,13 @@ local function redraw()
     out = render.render(p.state, os.time(), opts)
   end
   float.configure(p.float, rects.list, out.title, out.footer)
-  float.paint(p.float, out)
+  ui.paint(p.float, out)
   p.out = out
 
   -- Preview pane: beside the list when the editor is wide enough, else gone.
   if rects.preview then
     if not float.is_open(p.preview) then
-      p.preview = float.open { rect = rects.preview, title = "", enter = false, focusable = false, zindex = 59 }
+      p.preview = ui.open { rect = rects.preview, title = "", enter = false, focusable = false, zindex = 59 }
     end
     local row = model.current(p.state)
     local info, err
@@ -100,7 +100,7 @@ local function redraw()
       { width = rects.preview.width, height = rects.preview.height, home = vim.env.HOME, now = os.time(), err = err }
     )
     float.configure(p.preview, rects.preview, pv.title, nil)
-    float.paint(p.preview, pv)
+    ui.paint(p.preview, pv)
   elseif p.preview then
     float.close(p.preview)
     p.preview = nil
@@ -108,7 +108,7 @@ local function redraw()
   if p.hover_row and out.lines[p.hover_row + 1] and p.hover_row ~= out.cursor_row then
     vim.api.nvim_buf_set_extmark(
       p.float.buf,
-      float.NS,
+      ui.NS,
       p.hover_row,
       0,
       { line_hl_group = "SessionMgrHover", priority = 150 }
@@ -220,7 +220,7 @@ local function rename_current()
   end
   with_child(function(done)
     input.open {
-      rect = float.centered(math.max(40, #row.name + 12), 1),
+      rect = ui.centered(math.max(40, #row.name + 12), 1),
       title = (" Rename %s "):format(row.name),
       footer = {
         { " ⏎", "SessionMgrFooterKey" },
@@ -260,7 +260,7 @@ local function delete_current()
   end
   local cfg = config.get()
   local function ask(title, extra, on_yes, done)
-    confirm.open {
+    ui.confirm {
       title = title,
       danger = true,
       lines = vim.list_extend({
@@ -547,7 +547,7 @@ function M.open(scope)
   require("session-mgr").ensure_migrated()
   local cfg = config.get()
   local project = require("session-mgr.project").detect()
-  local f = float.open { rect = float.centered(60, 8), title = "", footer = "" }
+  local f = ui.open { rect = ui.centered(60, 8), title = "", footer = "" }
   P = {
     float = f,
     tab = scope == "procs" and "project" or scope,

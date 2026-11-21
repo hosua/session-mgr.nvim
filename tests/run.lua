@@ -9,6 +9,33 @@
 local this = debug.getinfo(1, "S").source:gsub("^@", "")
 local root = vim.fn.fnamemodify(this, ":p:h:h")
 vim.opt.runtimepath:prepend(root)
+
+-- popup.nvim and plenary.nvim: an explicit *_DIR, then the lazy.nvim install
+-- or the dev checkout, then a git-ignored clone under .tests/ (CI).
+local function dep(env, name, dev, url)
+  local candidates = {
+    vim.env[env] or "",
+    vim.fn.stdpath "data" .. "/lazy/" .. name,
+    vim.fn.expand "~/.local/share/nvim/lazy/" .. name,
+    dev or "",
+    root .. "/.tests/" .. name,
+  }
+  for _, p in ipairs(candidates) do
+    if p and p ~= "" and vim.uv.fs_stat(p) then
+      vim.opt.runtimepath:append(p)
+      return
+    end
+  end
+  local dest = root .. "/.tests/" .. name
+  local res = vim.system({ "git", "clone", "--depth=1", url, dest }):wait()
+  if res.code ~= 0 then
+    io.stderr:write(("FATAL: %s not found; set %s or clone %s\n"):format(name, env, url))
+    os.exit(2)
+  end
+  vim.opt.runtimepath:append(dest)
+end
+dep("PLENARY_DIR", "plenary.nvim", nil, "https://github.com/nvim-lua/plenary.nvim")
+dep("POPUP_DIR", "popup.nvim", vim.fn.expand "~/dev/hosua/nvim/popup.nvim", "https://github.com/hosua/popup.nvim")
 package.path = root .. "/tests/?.lua;" .. package.path
 
 local src = debug.getinfo(require("session-mgr").setup, "S").source:gsub("^@", "")

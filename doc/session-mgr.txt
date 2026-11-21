@@ -1,0 +1,12 @@
+*session-mgr.txt*  Named, per-project sessions
+
+Commands, keys and options are documented in README.md. In short:
+
+:SessionMgr save [name]     save a session for this project
+:SessionMgr load [name]     load one (no name opens the picker)
+:SessionMgr procs           open the Processes tab
+:checkhealth session-mgr    check Neovim, popup.nvim, plenary.nvim and storage
+
+Requires popup.nvim (floats, confirm dialog, key help) and plenary.nvim.
+
+ vim:tw=78:ft=help:norl:
