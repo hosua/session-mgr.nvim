@@ -3,8 +3,8 @@
 --- (ui/picker.lua); this module owns p.procs, p.procs_prev and p.procs_timer.
 local collect = require "session-mgr.procs.collect"
 local config = require "session-mgr.config"
-local confirm = require "session-mgr.ui.confirm"
-local float = require "session-mgr.ui.float"
+local float = require "popup.float"
+local ui = require "session-mgr.ui.style"
 local layout = require "session-mgr.ui.layout"
 local parse = require "session-mgr.procs.parse"
 local paths = require "session-mgr.paths"
@@ -38,7 +38,7 @@ function M.redraw(p)
   end
   local cfg = config.get()
   local pcfg = vim.tbl_extend("force", cfg.picker, { preview = cfg.picker.preview and p.show_preview })
-  local editor = float.editor()
+  local editor = ui.editor()
   -- Leave the preview its share before sizing the command column.
   local max_w = math.max(20, math.floor(editor.width * pcfg.max_width) - 2)
   local avail = max_w
@@ -54,12 +54,12 @@ function M.redraw(p)
     out = render.render(p.procs, ropts)
   end
   float.configure(p.float, rects.list, out.title, out.footer)
-  float.paint(p.float, out)
+  ui.paint(p.float, out)
   p.out = out
 
   if rects.preview then
     if not float.is_open(p.preview) then
-      p.preview = float.open { rect = rects.preview, title = "", enter = false, focusable = false, zindex = 59 }
+      p.preview = ui.open { rect = rects.preview, title = "", enter = false, focusable = false, zindex = 59 }
     end
     local pv = preview.build(pm.current(p.procs), {
       width = rects.preview.width,
@@ -68,7 +68,7 @@ function M.redraw(p)
       memory = p.procs.forest and p.procs.forest.memory or cfg.procs.memory,
     })
     float.configure(p.preview, rects.preview, pv.title, nil)
-    float.paint(p.preview, pv)
+    ui.paint(p.preview, pv)
   elseif p.preview then
     float.close(p.preview)
     p.preview = nil
@@ -76,7 +76,7 @@ function M.redraw(p)
   if p.hover_row and out.lines[p.hover_row + 1] and p.hover_row ~= out.cursor_row then
     vim.api.nvim_buf_set_extmark(
       p.float.buf,
-      float.NS,
+      ui.NS,
       p.hover_row,
       0,
       { line_hl_group = "SessionMgrHover", priority = 150 }
@@ -237,7 +237,7 @@ function M.kill(p, mode)
   end
 
   picker.with_child(function(done)
-    confirm.open {
+    ui.confirm {
       title = ("Send %s?"):format(sig),
       danger = true,
       lines = lines,
@@ -250,7 +250,7 @@ function M.kill(p, mode)
           done()
           return fire()
         end
-        confirm.open {
+        ui.confirm {
           title = "Really kill this nvim?",
           danger = true,
           lines = { { { "  Your current editor will close. Unsaved work here is lost.", "SessionMgrDanger" } } },

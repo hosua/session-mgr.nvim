@@ -2,12 +2,13 @@
 ---
 --- Why not vim.notify: the save message is two lines, and with the default
 --- cmdheight=1 a two-line message stops the editor at "Press ENTER".
-local float = require "session-mgr.ui.float"
+local float = require "popup.float"
+local ui = require "session-mgr.ui.style"
 
 local M = {}
 
 local LEVEL_HL = { [vim.log.levels.WARN] = "SessionMgrWarn", [vim.log.levels.ERROR] = "SessionMgrDanger" }
-local open = {} --- @type SessionMgrFloat[]
+local open = {} --- @type PopupFloat[]
 
 local function restack()
   local row = 1
@@ -33,7 +34,7 @@ function M.show(msg, level, timeout_ms)
     width = math.max(width, vim.fn.strdisplaywidth(lines[i]))
   end
   width = math.min(width, max)
-  local f = float.open {
+  local f = ui.open {
     rect = { row = 1, col = vim.o.columns - width - 3, width = width, height = #lines },
     title = " session-mgr ",
     enter = false,
@@ -52,7 +53,7 @@ function M.show(msg, level, timeout_ms)
   for i = 2, #lines do
     spans[#spans + 1] = { row = i - 1, col_start = 0, col_end = #lines[i], hl = "SessionMgrDim" }
   end
-  float.paint(f, { lines = lines, spans = spans })
+  ui.paint(f, { lines = lines, spans = spans })
   table.insert(open, f)
   restack()
   vim.defer_fn(function()

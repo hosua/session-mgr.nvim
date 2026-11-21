@@ -10,7 +10,7 @@ local paths = require "session-mgr.paths"
 
 vim.notify = function() end
 -- Headless nvim is 80x24. Never set 'columns' here: resizing a headless UI
--- that has a tabline trips an assertion in debug builds. Stub float.editor.
+-- that has a tabline trips an assertion in debug builds. Stub ui.env.
 
 local function keys(k)
   vim.api.nvim_feedkeys(vim.keycode(k), "x", false)
@@ -177,16 +177,17 @@ describe("picker", function()
 
   it("fits 80x24, and re-lays itself out on VimResized", function()
     world()
-    local float = require "session-mgr.ui.float"
+    local float = require "popup.float"
+    local ui = require "session-mgr.ui.style"
     local p = picker.open "all"
     local cfg = vim.api.nvim_win_get_config(p.float.win)
     ok(cfg.width + 2 <= 80 and cfg.height + 2 <= 24, vim.inspect { cfg.width, cfg.height })
-    local editor = float.editor
-    float.editor = function()
-      return { width = 50, height = 9 }
+    local env = ui.env
+    ui.env = function()
+      return { columns = 50, lines = 9, cmdheight = 0, laststatus = 0, showtabline = 0, tabpages = 1 }
     end
     vim.api.nvim_exec_autocmds("VimResized", {})
-    float.editor = editor
+    ui.env = env
     cfg = vim.api.nvim_win_get_config(p.float.win)
     ok(cfg.width + 2 <= 50 and cfg.height + 2 <= 9, vim.inspect { cfg.width, cfg.height })
     ok(lines()[3]:find "Name", "header survives a tiny window")
@@ -194,10 +195,11 @@ describe("picker", function()
   end)
   it("shows a preview beside the list on a wide editor; p toggles it; narrow hides it", function()
     world()
-    local float = require "session-mgr.ui.float"
-    local editor = float.editor
-    float.editor = function()
-      return { width = 170, height = 40 }
+    local float = require "popup.float"
+    local ui = require "session-mgr.ui.style"
+    local env = ui.env
+    ui.env = function()
+      return { columns = 170, lines = 40, cmdheight = 0, laststatus = 0, showtabline = 0, tabpages = 1 }
     end
     local p = picker.open "project"
     ok(float.is_open(p.preview), "preview opened")
@@ -210,12 +212,12 @@ describe("picker", function()
     eq(nil, p.preview)
     keys "p"
     ok(float.is_open(p.preview))
-    float.editor = function()
-      return { width = 100, height = 40 }
+    ui.env = function()
+      return { columns = 100, lines = 40, cmdheight = 0, laststatus = 0, showtabline = 0, tabpages = 1 }
     end
     vim.api.nvim_exec_autocmds("VimResized", {})
     eq(nil, p.preview)
-    float.editor = editor
+    ui.env = env
     local win = p.float.win
     picker.close()
     eq(false, vim.api.nvim_win_is_valid(win))

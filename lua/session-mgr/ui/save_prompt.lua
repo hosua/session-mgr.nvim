@@ -1,8 +1,8 @@
 --- `<leader>ss`: name a session. An input with a fixed `.vim` suffix over a
 --- live list of this project's sessions; Tab cycles matches into the input.
 local config = require "session-mgr.config"
-local confirm = require "session-mgr.ui.confirm"
-local float = require "session-mgr.ui.float"
+local float = require "popup.float"
+local ui = require "session-mgr.ui.style"
 local input = require "session-mgr.ui.input"
 local save_model = require "session-mgr.ui.save_model"
 local session = require "session-mgr.session"
@@ -42,13 +42,13 @@ function M.open()
   local project = require("session-mgr.project").detect()
   local rows = store.list(cfg.root, project)
   local prefill = cfg.save_prompt.prefill_active and state_mod.active_in(project) or ""
-  local width = math.min(cfg.save_prompt.width, float.editor().width - 6)
+  local width = math.min(cfg.save_prompt.width, ui.editor().width - 6)
   local list_h = math.max(1, math.min(cfg.save_prompt.max_list_height, math.max(#rows, 1)))
-  local box = float.centered(width, list_h + 3) -- input (1) + its border share (2) + list
+  local box = ui.centered(width, list_h + 3) -- input (1) + its border share (2) + list
 
   local s = { state = save_model.new { rows = rows, text = prefill, default_name = cfg.default_name, height = list_h } }
   S = s
-  s.list = float.open {
+  s.list = ui.open {
     rect = { row = box.row + 3, col = box.col, width = width, height = list_h },
     title = (" %d saved for %s "):format(#rows, project.label),
     footer = FOOTER,
@@ -62,11 +62,11 @@ function M.open()
       return
     end
     local out = save_model.render(s.state, os.time(), width)
-    float.paint(s.list, out)
+    ui.paint(s.list, out)
     local title = s.state.query == "" and (" %d saved for %s "):format(#rows, project.label)
       or (" %d of %d saved for %s "):format(out.count, #rows, project.label)
     vim.api.nvim_win_set_config(s.list.win, { title = title, title_pos = "center" })
-    if s.input and float.is_open(s.input) and float.has_border(s.input) then
+    if s.input and float.is_open(s.input) and ui.has_border(s.input) then
       vim.api.nvim_win_set_config(s.input.win, { footer = out.status, footer_pos = "right" })
     end
   end
@@ -116,7 +116,7 @@ function M.open()
         return finish_save(name)
       end
       s.confirming = true
-      confirm.open {
+      ui.confirm {
         title = "Overwrite session?",
         danger = true,
         lines = {

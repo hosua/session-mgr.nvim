@@ -46,9 +46,7 @@ M.WINHL =
 --- Idempotent. Called whenever a window opens, not only on ColorScheme:
 --- NvChad's base46 switches themes without firing that autocmd.
 function M.apply()
-  for name, target in pairs(M.LINKS) do
-    vim.api.nvim_set_hl(0, name, { link = target, default = true })
-  end
+  require("popup.highlights").define(M.LINKS)
 end
 
 return M

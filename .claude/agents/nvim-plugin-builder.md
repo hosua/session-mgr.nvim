@@ -10,6 +10,7 @@ description: >
   Never merges and never asks the user: it reports back so the main session can dispatch
   nvim-plugin-tester.
 model: sonnet
+effort: medium
 tools: Read, Write, Edit, Glob, Grep, Bash, LSP
 ---
 
@@ -33,6 +34,12 @@ open), stop and report the question back instead of guessing.
   plugin's defaults or in `lua/mappings.lua`. Run its checker on every lhs.
 - The repo's `CLAUDE.md` and README. The code on disk is the truth, not the spec.
 
+## Shared dependencies (both agents)
+
+- Layout follows nvim-lua/nvim-lua-plugin-template (`~/.claude/rules/common/nvim-plugin-template.md`). A plugin that drifts gets a `refactor/template-layout` PR with no behaviour change.
+- Use plenary.nvim (`plenary.path`, `plenary.job`, `plenary.async`, `plenary.scandir`, `plenary.busted`) wherever it covers the job, and declare it in the lazy spec `dependencies`.
+- Every float, popup and key-legend list comes from `popup.nvim` (`~/dev/hosua/nvim/popup.nvim`). Never copy window or legend code into a plugin. Tester: FAIL a branch that does.
+
 ## Where things live
 
 - Skill scripts: `S=~/.config/nvim/.claude/skills/nvim-create-and-integrate-plugin/scripts`.
@@ -48,8 +55,8 @@ open), stop and report the question back instead of guessing.
 2. `$S/scaffold.sh <MODULE> <CMD> <REPO> hosua <visibility> <dir> "<summary>"`, then
    `make test && stylua --check .` in the new dir.
 3. `git init -b main`, commit the scaffold, `gh repo create <REPO> --<visibility>
-   --source=. --remote=origin`, check `gh repo view hosua/<REPO> --json visibility -q
-   .visibility` prints what was asked, `git push -u origin main`. This is the only direct
+--source=. --remote=origin`, check `gh repo view hosua/<REPO> --json visibility -q
+.visibility` prints what was asked, `git push -u origin main`. This is the only direct
    push to `main`; everything after goes through a PR.
 4. Continue as for an existing plugin.
 

@@ -3,14 +3,15 @@
 ---
 --- A scratch buffer in insert mode rather than buftype=prompt, so <C-w>,
 --- <C-u>, pasting and the user's insert-mode habits all work.
-local float = require "session-mgr.ui.float"
+local float = require "popup.float"
+local ui = require "session-mgr.ui.style"
 
 local M = {}
 
 --- @param opts { rect: table, title: string|nil, footer: any, text: string|nil, suffix: string|nil, border: any, relative_win: integer|nil, zindex: integer|nil, on_change: fun(text: string)|nil, on_submit: fun(text: string), on_cancel: fun()|nil, keys: table<string, fun(text: string)>|nil }
---- @return SessionMgrFloat
+--- @return PopupFloat
 function M.open(opts)
-  local f = float.open {
+  local f = ui.open {
     rect = opts.rect,
     title = opts.title,
     footer = opts.footer,
@@ -29,7 +30,7 @@ function M.open(opts)
   end
   local function draw_suffix()
     if opts.suffix then
-      suffix_id = vim.api.nvim_buf_set_extmark(f.buf, float.NS, 0, #text(), {
+      suffix_id = vim.api.nvim_buf_set_extmark(f.buf, ui.NS, 0, #text(), {
         id = suffix_id,
         virt_text = { { opts.suffix, "SessionMgrSuffix" } },
         virt_text_pos = "inline",

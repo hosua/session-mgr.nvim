@@ -42,7 +42,8 @@ last-used / updated / created times.
 - Neovim **0.11+** (developed on 0.12). Uses float titles/footers, inline
   virtual text, `vim.system`, `vim.uv`, `vim.fs`.
 - `git` (optional): without it every directory is its own project.
-- No plugin dependencies.
+- [popup.nvim](https://github.com/hosua/popup.nvim) (every float, the confirm dialog and the key-help screen) and
+  [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) (declared for popup.nvim and the test runner).
 
 ## Install
 
@@ -60,6 +61,10 @@ return {
   {
     "hosua/session-mgr.nvim",
     dev = true,
+    dependencies = {
+      "nvim-lua/plenary.nvim",
+      { "hosua/popup.nvim", dev = true },
+    },
     cmd = { "SessionMgr" },   -- the load trigger; the keymaps below ride it
     event = "VeryLazy",       -- so autosave runs from startup, not from the first command
     opts = {},
@@ -662,7 +667,7 @@ active session.
 ## Development
 
 ```bash
-make test         # headless unit tests, no dependencies; proves it tested THIS checkout
+make test         # headless unit tests (needs popup.nvim and plenary.nvim, found via lazy or ~/dev); proves it tested THIS checkout
 make integration  # real :mksession round trips and the floats, under a throwaway XDG tree
 make smoke        # tmux: drives the real TUI and reads the screen back (needs tmux)
 make check        # stylua --check
@@ -670,8 +675,8 @@ make check        # stylua --check
 
 The UI is split so almost all of it is testable without a screen:
 `ui/model` (`reduce(state, action)`) and `ui/render` (state → lines,
-byte-accurate highlight spans, clickable regions) are pure; only `ui/float`
-creates windows.
+byte-accurate highlight spans, clickable regions) are pure; only popup.nvim's `popup.float`
+creates windows (`ui/style` fills in the options).
 
 The images under `docs/media/` are generated. `bash docs/tapes/capture.sh`
 regenerates them (needs vhs).
