@@ -31,7 +31,7 @@ last-used / updated / created times.
 - [Keymaps](#keymaps)
 - [Configuration](#configuration)
 - [How projects and sessions are identified](#how-projects-and-sessions-are-identified)
-  - [Parents of your home directory](#parents-of-your-home-directory)
+  - [Directories that need approval](#directories-that-need-approval)
   - [Ignored buffers](#ignored-buffers)
 - [Data on disk](#data-on-disk)
 - [Highlight groups](#highlight-groups)
@@ -433,6 +433,10 @@ require("session-mgr").setup {
     -- Where to go when neither git nor a marker matches. "home": your home
     -- directory. "cwd": the current directory.
     fallback = "home",
+    -- true: a directory you cannot read or write (and that git and the
+    -- markers missed) asks for approval before it holds a session, like a
+    -- parent of your home. false turns only this rule off.
+    require_access = true,
   },
   -- Buffers that never count as "a file is open" and never get autosaved
   -- over, such as the message editor `git commit` starts. Patterns are Lua
@@ -571,21 +575,37 @@ default is used.
   `resave_active` re-saves. It is per instance and not stored. `autosave`
   does not change it.
 
-### Parents of your home directory
+### Directories that need approval
 
-In `/`, `/home` or any other parent of `$HOME`, nothing falls back to your
-home directory. A session there would cover half the machine, so the plugin
-asks first.
+Two kinds of directory never fall back to your home directory. The plugin
+asks first, because a session there is either too broad or stored where you
+cannot write:
+
+- A parent of `$HOME` (`/`, `/home`). A session there would cover half the
+  machine.
+- A directory you cannot read or write, such as `/etc/gitea` owned by
+  `root:gitea` with mode 755. The check is `vim.uv.fs_access` for read and for
+  write, and a failed stat counts as no access. Set `project.require_access =
+  false` to turn off only this rule.
+
+This applies only where git and the markers found nothing. A git root or
+marker project is never asked about. A parent of `$HOME` that you also cannot
+write is asked about as a parent of `$HOME`.
 
 - The first save, load or new in such a directory asks `Create a session for
-  ... ?`. `y` records the directory in `<sessions root>/approved_roots.json`,
-  and it is never asked again.
+  ... ?` and says why, for example `You have no write access to /etc/gitea
+  (owner root, group gitea).` `y` records the directory in `<sessions
+  root>/approved_roots.json`, and it is never asked again. The project is then
+  that directory itself (`approved directory`), not your home. It stays
+  approved if you later get access to it.
 - `n` (also Enter, Esc and `q`) means no session for that run. Autosave and
   the startup question skip the directory, and a manual save asks again.
-- The exit autosave never asks. In an unapproved parent of `$HOME` it
-  writes nothing.
+- The exit autosave never asks. In an unapproved directory it writes nothing.
 - At startup the plugin asks only when an `autosave.vim` already exists
   there.
+- Wherever the plugin names the project (the save popup, the picker header,
+  the load messages), an unapproved directory reads like `/etc/gitea (no write
+  access, not approved)` and an approved one `approved directory /etc/gitea`.
 
 The session lives under this user's data dir. `root` and `sudo` have their
 own `$HOME` and their own `stdpath("data")`, so they will not find it unless
@@ -616,7 +636,7 @@ editors for hg, svn and cron.
     index.json                                metrics for this project
   .migrated-legacy-v1.json                    what the one-time import did
   %home%me%dev%mach.vim                       legacy file, left untouched
-  approved_roots.json                         parents of $HOME you said yes to
+  approved_roots.json                         directories you approved (parents of $HOME, no access)
 ```
 
 `index.json`:
@@ -740,9 +760,9 @@ active session.
 - **The startup question did not appear.** It needs `autosave = true`,
   `autoload` not `false`, an `autosave.vim` for this project, no ignored
   buffer open, and a start with no file arguments, no named or modified
-  buffer, no active session and a UI (not headless). In a parent of `$HOME`
-  it also needs an earlier `y` (see [Parents of your home
-  directory](#parents-of-your-home-directory)).
+  buffer, no active session and a UI (not headless). In a directory that
+  needs approval it also needs an earlier `y` (see [Directories that need
+  approval](#directories-that-need-approval)).
 - **I answered n and want the autosave back.** Run `:SessionMgr load!` or
   `<leader>sL`. The toast after `n` names the key.
 - **My sessions from a non-git folder are gone from `<leader>sl`.** That

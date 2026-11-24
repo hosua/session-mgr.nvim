@@ -51,6 +51,10 @@ M.defaults = {
     -- Where to go when neither git nor a marker matches. "home": your home
     -- directory. "cwd": the current directory.
     fallback = "home",
+    -- true: a directory you cannot read or write (and that git and the
+    -- markers missed) asks for approval before it holds a session, like a
+    -- parent of your home. false turns only this rule off.
+    require_access = true,
   },
   -- Buffers that never count as "a file is open" and never get autosaved
   -- over, such as the message editor `git commit` starts. Patterns are Lua
@@ -226,6 +230,10 @@ function M.resolve(opts)
     if type(pj.fallback) == "string" and pj.fallback ~= "home" and pj.fallback ~= "cwd" then
       problems[#problems + 1] = ("project.fallback must be home|cwd, got %s"):format(pj.fallback)
       pj.fallback = M.defaults.project.fallback
+    end
+    -- The type check above already reported a non-boolean; fall back to the default.
+    if type(pj.require_access) ~= "boolean" then
+      pj.require_access = M.defaults.project.require_access
     end
   end
   for _, g in ipairs { { "project", "markers" }, { "ignore", "filetypes" }, { "ignore", "patterns" } } do

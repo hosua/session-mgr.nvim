@@ -40,7 +40,7 @@ end)
 
 describe("approval question", function()
   it("warns that the session lives under this user's data dir", function()
-    local p = project.from_root("/", false, "ancestor_pending")
+    local p = project.from_root("/", false, "pending")
     local body = table.concat(
       text(
         prompt.approve_lines { project = p, sessions_root = "/home/me/.local/share/nvim/sessions", home = "/home/me" }
@@ -51,6 +51,37 @@ describe("approval question", function()
     ok(body:find("THIS user's data dir", 1, true), body)
     ok(body:find("~/.local/share/nvim/sessions", 1, true), body)
     ok(body:find("root and sudo", 1, true), body)
+  end)
+end)
+
+describe("approval question reasons", function()
+  local function body(reason, owner)
+    local p = project.from_root("/etc/gitea", false, "pending", nil, reason)
+    return table.concat(
+      text(prompt.approve_lines {
+        project = p,
+        sessions_root = "/home/me/.local/share/nvim/sessions",
+        home = "/home/me",
+        owner = owner,
+      }),
+      "\n"
+    )
+  end
+
+  it("says why, with the owner and group", function()
+    local owner = { user = "root", group = "gitea" }
+    ok(body("no_write", owner):find("You have no write access to /etc/gitea (owner root, group gitea).", 1, true))
+    ok(body("no_read", owner):find("You have no read access to /etc/gitea (owner root, group gitea).", 1, true))
+    ok(body("no_access", owner):find("You have no read or write access to /etc/gitea", 1, true))
+    ok(body("no_write"):find("You have no write access to /etc/gitea.", 1, true))
+  end)
+
+  it("keeps the sudo warning for every reason", function()
+    for _, r in ipairs { "home_parent", "no_read", "no_write", "no_access" } do
+      local b = body(r)
+      ok(b:find("root and sudo", 1, true), r)
+      ok(b:find("THIS user's data dir", 1, true), r)
+    end
   end)
 end)
 

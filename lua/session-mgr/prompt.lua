@@ -1,7 +1,8 @@
 --- The two questions session-mgr asks on its own: "load the autosave you
---- left in this project?" at startup, and "may a parent of your home hold a
---- session?". Both are y/N modals from popup.nvim (via ui.style.confirm),
---- default No: Enter, Esc and q all answer no.
+--- left in this project?" at startup, and "may a parent of your home, or a
+--- directory you cannot read or write, hold a session?". Both are y/N modals
+--- from popup.nvim (via ui.style.confirm), default No: Enter, Esc and q all
+--- answer no.
 ---
 --- ask_autoload and ask_approve are function fields so tests can stub them,
 --- like guard.ask. The line builders are pure.
@@ -44,14 +45,33 @@ end
 --- @field project SessionMgrProject
 --- @field sessions_root string config.root
 --- @field home string|nil
+--- @field owner { user: string, group: string }|nil owner and group of the directory
 
---- Body of the "parent of your home" question. Pure.
+--- The first line of the approval question: the reason. Pure.
+--- @param info SessionMgrApproveInfo
+--- @return table chunk list
+local function reason_line(info)
+  local where = paths.tilde(info.project.root, info.home)
+  local reason = info.project.pending_reason or "home_parent"
+  if reason == "home_parent" then
+    return { { "  " }, { where, "SessionMgrName" }, { " is a parent of your home directory." } }
+  end
+  local lacks = reason == "no_read" and "read" or reason == "no_write" and "write" or "read or write"
+  local line = { { "  You have no " .. lacks .. " access to " }, { where, "SessionMgrName" } }
+  if info.owner then
+    line[#line + 1] = { (" (owner %s, group %s)"):format(info.owner.user, info.owner.group) }
+  end
+  line[#line + 1] = { "." }
+  return line
+end
+
+--- Body of the approval question (a parent of your home, or a directory you
+--- cannot read or write). Pure.
 --- @param info SessionMgrApproveInfo
 --- @return table[]
 function M.approve_lines(info)
-  local where = paths.tilde(info.project.root, info.home)
   return {
-    { { "  " }, { where, "SessionMgrName" }, { " is a parent of your home directory." } },
+    reason_line(info),
     { { "  A session saved here is stored under THIS user's data dir:" } },
     { { "    " }, { paths.tilde(info.sessions_root, info.home), "SessionMgrName" } },
     { { "  root and sudo have their own $HOME and data dir, so they will", "SessionMgrWarn" } },
@@ -91,7 +111,7 @@ function M.ask_autoload(info, cb)
   }, cb)
 end
 
---- Ask whether a parent of $HOME may hold a session. A function field so
+--- Ask whether a pending directory may hold a session. A function field so
 --- tests can stub it.
 --- @param info SessionMgrApproveInfo
 --- @param cb fun(yes: boolean)

@@ -95,9 +95,10 @@ end
 function M.save(project, raw_name, opts)
   local cfg = config.get()
   local background = opts and opts.background or false
-  if project.kind == "ancestor_pending" then
-    local why = ("%s is a parent of your home and has not been approved for sessions"):format(
-      paths.tilde(project.root, vim.uv.os_homedir())
+  if project.kind == "pending" then
+    local why = ("%s (%s) has not been approved for sessions"):format(
+      paths.tilde(project.root, vim.uv.os_homedir()),
+      project_mod.reason_short(project.pending_reason)
     )
     if not background then
       notify("Not saved: " .. why, vim.log.levels.WARN)
@@ -186,32 +187,38 @@ end
 
 --- Write the current layout to this project's "autosave" session if
 --- `autosave` is on, a file is open, and the current buffer is not an ignored
---- one. Never asks anything: a parent of $HOME that is not approved is skipped.
+--- one. Never asks anything: a pending directory (parent of $HOME, or one you
+--- cannot read or write) that is not approved is skipped.
 --- @return boolean saved
 function M.autosave()
   if not (config.get().autosave and has_files() and not ignore.is_ignored(0)) then
     return false
   end
   local project = project_mod.detect()
-  if project.kind == "ancestor_pending" then
+  if project.kind == "pending" then
     return false
   end
   return (M.save(project, M.AUTOSAVE_NAME, { silent = true, background = true }))
 end
 
 --- Make sure `project` may hold sessions, then call `cb(project)`. Anything
---- but an unapproved parent of $HOME calls back at once. For that one, ask
+--- but a pending directory calls back at once. For that one, ask
 --- (once ever per directory: a yes is written to approved_roots.json); a no
 --- calls `cb(nil)`.
 --- @param project SessionMgrProject
 --- @param cb fun(project: SessionMgrProject|nil)
 function M.ensure_approved(project, cb)
-  if project.kind ~= "ancestor_pending" then
+  if project.kind ~= "pending" then
     return cb(project)
   end
   local cfg = config.get()
   local home = vim.uv.os_homedir()
-  require("session-mgr.prompt").ask_approve({ project = project, sessions_root = cfg.root, home = home }, function(yes)
+  require("session-mgr.prompt").ask_approve({
+    project = project,
+    sessions_root = cfg.root,
+    home = home,
+    owner = require("session-mgr.access").owner(project.root),
+  }, function(yes)
     local where = paths.tilde(project.root, home)
     if not yes then
       approved.decline(project.root)
@@ -399,7 +406,7 @@ function M.autoload(on_done)
   local project = project_mod.detect()
   if
     not store.exists(cfg.root, project.key, M.AUTOSAVE_NAME)
-    or (project.kind == "ancestor_pending" and approved.is_declined(project.root))
+    or (project.kind == "pending" and approved.is_declined(project.root))
   then
     return on_done(false)
   end

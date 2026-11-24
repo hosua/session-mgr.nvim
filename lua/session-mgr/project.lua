@@ -3,15 +3,17 @@
 --- In order: the git root of the cwd, the nearest ancestor holding a marker
 --- (`project.markers`), else the home directory (or the cwd itself with
 --- `project.fallback = "cwd"`). A directory that is a parent of $HOME (/ or
---- /home) is never picked silently: it comes back as "ancestor_pending" and
---- stays that way until it is approved once (see session-mgr.approved).
+--- /home), or one the current user cannot read or write (`project.require_access`),
+--- is never picked silently: it comes back as "pending" with a `pending_reason`
+--- and stays that way until it is approved once (see session-mgr.approved).
 --- Git worktrees resolve to their own top level, so each worktree has its
 --- own sessions; that is correct, since their file paths differ.
 local paths = require "session-mgr.paths"
 
 local M = {}
 
---- @alias SessionMgrProjectKind "git"|"marker"|"home"|"cwd"|"approved"|"ancestor_pending"
+--- @alias SessionMgrProjectKind "git"|"marker"|"home"|"cwd"|"approved"|"pending"
+--- @alias SessionMgrPendingReason "home_parent"|"no_read"|"no_write"|"no_access"
 
 --- @class SessionMgrProject
 --- @field key string   escaped root, the directory name under config.root
@@ -20,6 +22,7 @@ local M = {}
 --- @field is_git boolean
 --- @field kind SessionMgrProjectKind
 --- @field marker string|nil  the marker file or directory that made this project
+--- @field pending_reason SessionMgrPendingReason|nil  why a "pending" project needs approval
 
 --- @type table<string, SessionMgrProject>
 local cache = {}
@@ -27,8 +30,9 @@ local cache = {}
 --- Build a project from a known root. Pure.
 --- @param kind SessionMgrProjectKind|nil defaults to "git" when is_git, else "cwd"
 --- @param marker string|nil
+--- @param pending_reason SessionMgrPendingReason|nil
 --- @return SessionMgrProject
-function M.from_root(root, is_git, kind, marker)
+function M.from_root(root, is_git, kind, marker, pending_reason)
   root = vim.fs.normalize(root)
   local label = vim.fs.basename(root)
   return {
@@ -38,6 +42,7 @@ function M.from_root(root, is_git, kind, marker)
     is_git = is_git,
     kind = kind or (is_git and "git" or "cwd"),
     marker = marker,
+    pending_reason = pending_reason,
   }
 end
 
@@ -99,9 +104,33 @@ function M.find_marker(cwd, home, markers, exists)
   return nil
 end
 
+--- Why `dir` needs an approval question, or nil when it does not. A parent
+--- of $HOME wins over a missing permission. `access(dir, "R"|"W")` is
+--- injected so this stays pure; nil means "assume full access".
+--- @param dir string
+--- @param home string
+--- @param access (fun(dir: string, mode: "R"|"W"): boolean)|nil
+--- @param require_access boolean|nil false turns the permission rule off
+--- @return SessionMgrPendingReason|nil
+function M.pending_reason(dir, home, access, require_access)
+  if M.is_home_ancestor(dir, home) then
+    return "home_parent"
+  end
+  if require_access == false or not access then
+    return nil
+  end
+  local can_read, can_write = access(dir, "R"), access(dir, "W")
+  if not can_read and not can_write then
+    return "no_access"
+  end
+  return (not can_read and "no_read") or (not can_write and "no_write") or nil
+end
+
 --- The resolution rules, with every input passed in. Pure.
+--- `access` and `require_access` are optional: without `access` only a
+--- parent of $HOME needs approval.
 --- @param cwd string
---- @param ctx { git_top: string|nil, home: string, markers: string[], exists: fun(path: string): boolean, fallback: "home"|"cwd", approved: table<string, boolean> }
+--- @param ctx { git_top: string|nil, home: string, markers: string[], exists: fun(path: string): boolean, fallback: "home"|"cwd", approved: table<string, boolean>, access: (fun(dir: string, mode: "R"|"W"): boolean)|nil, require_access: boolean|nil }
 --- @return SessionMgrProject
 function M.resolve(cwd, ctx)
   cwd = vim.fs.normalize(cwd)
@@ -112,14 +141,34 @@ function M.resolve(cwd, ctx)
   if dir then
     return M.from_root(dir, false, "marker", marker)
   end
-  if M.is_home_ancestor(cwd, ctx.home) then
-    local kind = ctx.approved[cwd] and "approved" or "ancestor_pending"
-    return M.from_root(cwd, false, kind)
+  if cwd ~= vim.fs.normalize(ctx.home) then
+    -- An approved directory stays approved, also after it became accessible.
+    if ctx.approved[cwd] then
+      return M.from_root(cwd, false, "approved")
+    end
+    local reason = M.pending_reason(cwd, ctx.home, ctx.access, ctx.require_access)
+    if reason then
+      return M.from_root(cwd, false, "pending", nil, reason)
+    end
   end
   if ctx.fallback == "cwd" then
     return M.from_root(cwd, false, "cwd")
   end
   return M.from_root(ctx.home, false, "home")
+end
+
+local REASONS = {
+  home_parent = { "parent of your home", "parent of home" },
+  no_read = { "no read access", "no read access" },
+  no_write = { "no write access", "no write access" },
+  no_access = { "no read or write access", "no read or write access" },
+}
+
+--- Short reason a directory is pending: "parent of your home", "no write access".
+--- @param reason SessionMgrPendingReason|nil nil reads as home_parent
+--- @return string
+function M.reason_short(reason)
+  return REASONS[reason or "home_parent"][1]
 end
 
 --- Why this project was chosen: "git root", "marker .hg", "home fallback",
@@ -136,8 +185,8 @@ function M.why(project)
     return "home fallback"
   elseif kind == "approved" then
     return "approved directory"
-  elseif kind == "ancestor_pending" then
-    return "parent of your home, not approved yet"
+  elseif kind == "pending" then
+    return M.reason_short(project.pending_reason) .. ", not approved yet"
   end
   return "current directory"
 end
@@ -160,8 +209,8 @@ function M.describe(project, home, max_width)
     head, tail = "home ", " (no git repo here)"
   elseif kind == "approved" then
     head = "approved directory "
-  elseif kind == "ancestor_pending" then
-    tail = " (parent of home, not approved)"
+  elseif kind == "pending" then
+    tail = (" (%s, not approved)"):format(REASONS[project.pending_reason or "home_parent"][2])
   else
     head, tail = "directory ", " (no git repo here)"
   end
@@ -183,6 +232,7 @@ function M.detect(cwd, opts)
     cwd,
     tostring(opts.git_root),
     tostring(opts.fallback),
+    tostring(opts.require_access),
     table.concat(opts.markers or {}, ","),
   }, "\0")
   local hit = cache[cache_key]
@@ -190,10 +240,12 @@ function M.detect(cwd, opts)
     return hit
   end
   local home = vim.uv.os_homedir() or cwd
-  local approved = {}
-  if M.is_home_ancestor(cwd, home) then
-    approved = require("session-mgr.approved").set()
-  end
+  -- Only read approved_roots.json when a directory is actually in question.
+  local approved = setmetatable({}, {
+    __index = function(_, dir)
+      return require("session-mgr.approved").set()[dir]
+    end,
+  })
   local project = M.resolve(cwd, {
     git_top = opts.git_root and git_root(cwd, opts.git_timeout_ms) or nil,
     home = home,
@@ -203,10 +255,12 @@ function M.detect(cwd, opts)
     end,
     fallback = opts.fallback or "home",
     approved = approved,
+    access = require("session-mgr.access").check,
+    require_access = opts.require_access,
   })
-  -- An unapproved parent of home is re-read each time: approving it, here or
+  -- A pending directory is re-read each time: approving it, here or
   -- in another nvim, must take effect without a restart.
-  if project.kind ~= "ancestor_pending" then
+  if project.kind ~= "pending" then
     cache[cache_key] = project
   end
   return project
@@ -218,7 +272,13 @@ end
 --- @return SessionMgrProject
 function M.detect_legacy(cwd)
   local cfg = require("session-mgr.config").get().project
-  return M.detect(cwd, { git_root = cfg.git_root, git_timeout_ms = cfg.git_timeout_ms, markers = {}, fallback = "cwd" })
+  return M.detect(cwd, {
+    git_root = cfg.git_root,
+    git_timeout_ms = cfg.git_timeout_ms,
+    markers = {},
+    fallback = "cwd",
+    require_access = false,
+  })
 end
 
 function M.clear_cache()
