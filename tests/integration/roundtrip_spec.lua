@@ -755,7 +755,7 @@ describe("parents of home", function()
     vim.fn.delete(approved.file(w.root))
     project.clear_cache()
     approved.reset_declined()
-    eq("ancestor_pending", project.detect().kind)
+    eq("pending", project.detect().kind)
     msgs = {}
   end
 
@@ -832,7 +832,134 @@ describe("parents of home", function()
       end)
       eq({ false, 1, 0 }, { done, #asked.approve, #asked.autoload })
       eq({}, open_names())
-      eq("ancestor_pending", project.detect().kind)
+      eq("pending", project.detect().kind)
+    end)
+  end)
+end)
+
+describe("directories without access", function()
+  local session = require "session-mgr.session"
+  local prompt = require "session-mgr.prompt"
+  local approved = require "session-mgr.approved"
+  local sm = require "session-mgr"
+
+  --- cwd = a real chmod'd directory under a fake $HOME. Skipped as root,
+  --- since root passes every access check.
+  local function world(mode)
+    local base = vim.uv.fs_realpath(tmpdir())
+    local home, dir = base .. "/me", base .. "/me/locked"
+    vim.fn.mkdir(dir, "p")
+    vim.fn.writefile({ "x" }, dir .. "/x.txt")
+    local saved_home = vim.env.HOME
+    vim.env.HOME = home
+    vim.cmd "silent! %bwipeout!"
+    vim.cmd.cd(dir)
+    vim.uv.fs_chmod(dir, mode) -- after cd: a mode 000 directory cannot be entered
+    project.clear_cache()
+    msgs = {}
+    local root = tmpdir()
+    require("session-mgr").setup { root = root, autosave_interval = 0 }
+    return {
+      dir = dir,
+      root = root,
+      restore = function()
+        vim.uv.fs_chmod(dir, tonumber("755", 8))
+        vim.cmd.cd(base)
+        vim.env.HOME = saved_home
+        project.clear_cache()
+        approved.reset_declined()
+      end,
+    }
+  end
+
+  local function stubbed(w, answer, fn)
+    local saved = prompt.ask_approve
+    local asked = {}
+    prompt.ask_approve = function(info, cb)
+      asked[#asked + 1] = info
+      cb(answer)
+    end
+    local okk, err = pcall(fn, asked)
+    prompt.ask_approve = saved
+    w.restore()
+    assert(okk, err)
+  end
+
+  local is_root = vim.uv.getuid() == 0
+
+  it("a read-only directory is pending with reason no_write", function()
+    if is_root then
+      return
+    end
+    local w = world(tonumber("555", 8))
+    stubbed(w, false, function()
+      local p = project.detect()
+      eq({ "pending", w.dir, "no_write" }, { p.kind, p.root, p.pending_reason })
+    end)
+  end)
+
+  it("a directory with no permissions is pending with reason no_access", function()
+    if is_root then
+      return
+    end
+    local w = world(0)
+    stubbed(w, false, function()
+      eq("no_access", project.detect(w.dir).pending_reason)
+    end)
+  end)
+
+  it("a yes saves under the directory, not home, and is never asked again", function()
+    if is_root then
+      return
+    end
+    local w = world(tonumber("555", 8))
+    stubbed(w, true, function(asked)
+      vim.cmd "edit x.txt"
+      eq(true, (sm.save "work"))
+      eq(1, #asked)
+      eq("no_write", asked[1].project.pending_reason)
+      eq({ w.dir }, approved.read(w.root))
+      local p = project.detect()
+      eq({ "approved", w.dir }, { p.kind, p.root })
+      ok(vim.uv.fs_stat(paths.session_file(w.root, p.key, "work")))
+      eq(true, (sm.save "again"))
+      eq(1, #asked)
+      -- Still approved once the directory becomes writable.
+      vim.uv.fs_chmod(w.dir, tonumber("755", 8))
+      project.clear_cache()
+      eq("approved", project.detect().kind)
+    end)
+  end)
+
+  it("a no writes nothing, skips the autosave, and asks again on the next manual save", function()
+    if is_root then
+      return
+    end
+    local w = world(tonumber("555", 8))
+    stubbed(w, false, function(asked)
+      vim.cmd "edit x.txt"
+      eq(false, (sm.save "work"))
+      eq({}, approved.read(w.root))
+      eq(false, session.autosave())
+      eq(1, #asked)
+      eq(false, (sm.save "work"))
+      eq(2, #asked)
+      eq("pending", project.detect().kind)
+    end)
+  end)
+
+  it("require_access = false files it under home without asking", function()
+    if is_root then
+      return
+    end
+    local w = world(tonumber("555", 8))
+    stubbed(w, false, function(asked)
+      require("session-mgr").setup { root = w.root, autosave_interval = 0, project = { require_access = false } }
+      project.clear_cache()
+      eq("home", project.detect().kind)
+      vim.cmd "edit x.txt"
+      eq(true, (sm.save "work"))
+      eq(0, #asked)
     end)
   end)
 end)

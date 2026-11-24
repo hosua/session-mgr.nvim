@@ -68,6 +68,14 @@ describe("config", function()
     eq("home", cfg.project.fallback)
     eq({}, select(2, config.resolve { project = { fallback = "cwd", markers = { ".git-ish" } } }))
 
+    eq(true, config.resolve().project.require_access)
+    eq(false, config.resolve({ project = { require_access = false } }).project.require_access)
+    quiet(function()
+      cfg, problems = config.resolve { project = { require_access = "no" } }
+    end)
+    eq({ "project.require_access must be boolean, got string" }, problems)
+    eq(true, cfg.project.require_access)
+
     quiet(function()
       cfg, problems = config.resolve { project = { markers = { 1 } }, ignore = { patterns = { {} } } }
     end)

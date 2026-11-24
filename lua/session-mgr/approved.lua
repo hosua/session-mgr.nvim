@@ -1,5 +1,6 @@
---- Directories you said "yes" to when session-mgr asked whether a parent of
---- your home (/ or /home) may hold a session. Stored as a JSON array in
+--- Directories you said "yes" to when session-mgr asked whether a pending
+--- directory may hold a session: a parent of your home (/ or /home), or one
+--- you cannot read or write. Stored as a JSON array in
 --- <config.root>/approved_roots.json, written atomically. A "no" is only
 --- remembered for this nvim run.
 local M = {}

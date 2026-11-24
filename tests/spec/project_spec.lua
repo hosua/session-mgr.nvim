@@ -93,12 +93,75 @@ describe("project.resolve (pure)", function()
 
   it("a parent of home is pending until approved", function()
     for _, dir in ipairs { "/", "/home" } do
-      eq("ancestor_pending", project.resolve(dir, ctx()).kind)
-      eq("ancestor_pending", project.resolve(dir, ctx { fallback = "cwd" }).kind)
+      eq("pending", project.resolve(dir, ctx()).kind)
+      eq("pending", project.resolve(dir, ctx { fallback = "cwd" }).kind)
       local p = project.resolve(dir, ctx { approved = { [dir] = true } })
       eq({ "approved", dir }, { p.kind, p.root })
     end
     eq("home", project.resolve("/home/me", ctx()).kind)
+  end)
+
+  describe("access rule", function()
+    --- A fake access check: `denied` maps a mode to the dirs that lack it.
+    local function access(denied)
+      return function(dir, mode)
+        return not (denied[mode] and denied[mode][dir])
+      end
+    end
+
+    it("a directory without write, read or both access is pending with the reason", function()
+      local cases = {
+        { { W = { ["/etc/gitea"] = true } }, "no_write" },
+        { { R = { ["/etc/gitea"] = true } }, "no_read" },
+        { { R = { ["/etc/gitea"] = true }, W = { ["/etc/gitea"] = true } }, "no_access" },
+      }
+      for _, c in ipairs(cases) do
+        local p = project.resolve("/etc/gitea", ctx { access = access(c[1]) })
+        eq({ "pending", "/etc/gitea", c[2] }, { p.kind, p.root, p.pending_reason })
+        p = project.resolve("/etc/gitea", ctx { access = access(c[1]), fallback = "cwd" })
+        eq("pending", p.kind)
+      end
+    end)
+
+    it("a parent of home keeps its own reason even without access", function()
+      local none = { R = { ["/home"] = true }, W = { ["/home"] = true } }
+      eq("home_parent", project.resolve("/home", ctx { access = access(none) }).pending_reason)
+    end)
+
+    it("approval turns it into an approved project rooted at the directory", function()
+      local p = project.resolve(
+        "/etc/gitea",
+        ctx { access = access { W = { ["/etc/gitea"] = true } }, approved = { ["/etc/gitea"] = true } }
+      )
+      eq({ "approved", "/etc/gitea" }, { p.kind, p.root })
+    end)
+
+    it("require_access = false turns only this rule off", function()
+      local denied = access { W = { ["/etc/gitea"] = true } }
+      eq("home", project.resolve("/etc/gitea", ctx { access = denied, require_access = false }).kind)
+      eq("pending", project.resolve("/home", ctx { access = denied, require_access = false }).kind)
+    end)
+
+    it("a git root or a marker project is unaffected", function()
+      local denied = access { W = { ["/etc/gitea"] = true } }
+      eq("git", project.resolve("/etc/gitea", ctx { access = denied, git_top = "/etc/gitea" }).kind)
+      local p = project.resolve(
+        "/etc/gitea",
+        ctx {
+          access = denied,
+          exists = function(path)
+            return path == "/etc/gitea/.hg"
+          end,
+        }
+      )
+      eq("marker", p.kind)
+    end)
+
+    it("an accessible directory and the home itself resolve as before", function()
+      eq("home", project.resolve("/srv/data", ctx { access = access {} }).kind)
+      local none = { R = { ["/home/me"] = true }, W = { ["/home/me"] = true } }
+      eq("home", project.resolve("/home/me", ctx { access = access(none) }).kind)
+    end)
   end)
 
   it("keys stay the escaped root, so existing sessions are found", function()
@@ -115,10 +178,26 @@ describe("project.describe and why", function()
     eq("home ~ (no git repo here)", project.describe(project.from_root("/home/me", false, "home"), home))
     eq("directory /srv/x (no git repo here)", project.describe(project.from_root("/srv/x", false, "cwd"), home))
     eq("approved directory /", project.describe(project.from_root("/", false, "approved"), home))
+    eq("/home (parent of home, not approved)", project.describe(project.from_root("/home", false, "pending"), home))
     eq(
-      "/home (parent of home, not approved)",
-      project.describe(project.from_root("/home", false, "ancestor_pending"), home)
+      "/etc/gitea (no write access, not approved)",
+      project.describe(project.from_root("/etc/gitea", false, "pending", nil, "no_write"), home)
     )
+    eq(
+      "/x (no read or write access, not approved)",
+      project.describe(project.from_root("/x", false, "pending", nil, "no_access"), home)
+    )
+    eq(
+      "/x (no read access, not approved)",
+      project.describe(project.from_root("/x", false, "pending", nil, "no_read"), home)
+    )
+  end)
+  it("why names the pending reason", function()
+    eq(
+      "parent of your home, not approved yet",
+      project.why(project.from_root("/", false, "pending", nil, "home_parent"))
+    )
+    eq("no write access, not approved yet", project.why(project.from_root("/x", false, "pending", nil, "no_write")))
   end)
   it("why is the short reason the startup question shows", function()
     eq("git root", project.why(project.from_root("/a", true)))
@@ -183,7 +262,7 @@ describe("project.detect", function()
     require("session-mgr.config").resolve { root = sessions }
     with_home(home, function()
       local p = project.detect(base .. "/users", OPTS)
-      eq("ancestor_pending", p.kind)
+      eq("pending", p.kind)
       ok(require("session-mgr.approved").add(sessions, base .. "/users"))
       eq("approved", project.detect(base .. "/users", OPTS).kind)
     end)

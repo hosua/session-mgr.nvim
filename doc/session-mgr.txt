@@ -13,9 +13,11 @@ project with an autosave.vim asks y/N before loading it (option `autoload`).
 `n`, Enter, Esc and `q` start empty. `autoload = "always"` loads without asking
 and `false` never offers it.
 Setting `project.fallback = "cwd"` makes a directory outside git its own project.
-A parent of your home (`/`, `/home`) asks once before it may hold a session. A
-yes is stored in `<sessions root>/approved_roots.json`. The exit autosave
-never asks.
+A parent of your home (`/`, `/home`), or a directory you cannot read or write
+(`project.require_access`, default true), asks once before it may hold a
+session, and the question says why. A yes is stored in
+`<sessions root>/approved_roots.json` and the project is that directory, not
+your home. The exit autosave never asks.
 Buffers matching the `ignore` option (git commit messages and the like) do not
 count as open files: the exit autosave is skipped while one is current, and
 the startup question never appears with one open.
