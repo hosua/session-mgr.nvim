@@ -393,8 +393,9 @@ end
 --- Offer this project's autosave.vim once nvim has started without files.
 --- `autoload = "prompt"` asks first (default No), `"always"` loads it, and
 --- false or autosave off do nothing. Nothing is offered while an ignored
---- buffer is open, or in a parent of $HOME you have not approved (it only
---- asks to approve one that already holds an autosave.vim). Never loads
+--- buffer is open, or in a pending directory you have not approved (a parent
+--- of $HOME, or one you cannot read or write). It only asks to approve one
+--- that already holds an autosave.vim. Never loads
 --- without a yes. `on_done(true)` means the session was loaded.
 --- @param on_done fun(loaded: boolean)|nil
 function M.autoload(on_done)

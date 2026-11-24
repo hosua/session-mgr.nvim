@@ -110,8 +110,9 @@ local function current_project()
   return require("session-mgr.project").detect()
 end
 
---- Run `cb(project)` for this directory's project. In a parent of $HOME that
---- is not approved yet it asks first (see session.ensure_approved), so `cb`
+--- Run `cb(project)` for this directory's project. In a pending directory (a
+--- parent of $HOME, or one you cannot read or write) that is not approved
+--- yet it asks first (see session.ensure_approved), so `cb`
 --- may run after you answer, or never.
 --- @param cb fun(project: SessionMgrProject)
 function M.with_project(cb)
@@ -151,7 +152,7 @@ function M.ensure_migrated()
 end
 
 --- Save the current project's session `name`; nil/"" means the default session.
---- In an unapproved parent of $HOME this returns false at once and saves
+--- In an unapproved pending directory this returns false at once and saves
 --- after you answer yes to the question it asks.
 --- @param name string|nil
 --- @return boolean ok, string|nil err
