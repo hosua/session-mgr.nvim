@@ -38,7 +38,8 @@ open), stop and report the question back instead of guessing.
 
 - Layout follows nvim-lua/nvim-lua-plugin-template (`~/.claude/rules/common/nvim-plugin-template.md`). A plugin that drifts gets a `refactor/template-layout` PR with no behaviour change.
 - Use plenary.nvim (`plenary.path`, `plenary.job`, `plenary.async`, `plenary.scandir`, `plenary.busted`) wherever it covers the job, and declare it in the lazy spec `dependencies`.
-- Every float, popup and key-legend list comes from `popup.nvim` (`~/dev/hosua/nvim/popup.nvim`). Never copy window or legend code into a plugin. Tester: FAIL a branch that does.
+- Every float, popup and key-legend list comes from `popup.nvim` (`~/dev/hosua/nvim/submodules/popup.nvim`). Never copy window or legend code into a plugin. Tester: FAIL a branch that does.
+- CI runs locally: `scripts/gates.sh <repo>` is the CI run, hermetic (empty `XDG_*` dirs, no user config). GitHub Actions workflows stay in `.github/workflows/` but every job has `if: vars.CI_ENABLED == 'true'`, so they skip unless that repo variable is set (`gh variable set CI_ENABLED --body true -R hosua/<repo>`). Never wait on `gh pr checks`. Keep the `if:` on every new job.
 
 ## Where things live
 

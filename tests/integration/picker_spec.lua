@@ -31,7 +31,8 @@ local function world()
   vim.cmd.cd(dir)
   project.clear_cache()
   root = tmpdir()
-  sm.setup { root = root, picker = { refresh_ms = 0 } }
+  -- fallback = "cwd": the temp dir is its own project, as before the home fallback existed.
+  sm.setup { root = root, project = { fallback = "cwd" }, picker = { refresh_ms = 0 } }
   vim.cmd "edit a.txt"
   for _, n in ipairs { "default", "beta", "alpha" } do
     sm.save(n)

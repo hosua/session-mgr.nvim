@@ -46,7 +46,7 @@ describe("render project view", function()
     end
   end)
   it("titles by project and marks cursor line, default and active", function()
-    eq(" Load a session for repo-a ", out.title)
+    eq(" Load a session for git root ~/dev/repo-a ", out.title)
     eq(3, out.cursor_row)
     eq("SessionMgrCursorLine", out.line_hl[3])
     eq({ "default" }, span_text(out, "SessionMgrDefault"))

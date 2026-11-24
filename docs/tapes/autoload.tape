@@ -1,4 +1,4 @@
-# docs/tapes/autoload.tape: plain nvim in a project with autosave.vim loads it and prints the hint.
+# docs/tapes/autoload.tape: plain nvim in a project with autosave.vim shows the startup y/N question.
 # Regenerate:  bash docs/tapes/capture.sh autoload
 # Rows shown:  startup autoload message (docs/tapes/FEATURES.md)
 Require bash

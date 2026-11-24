@@ -4,8 +4,8 @@ Named, per-project Neovim sessions with a floating picker.
 
 Save as many sessions per project as you like, load them from a sortable,
 filterable, mouse-friendly popup, and keep a one-keystroke `default` session
-for the lazy case. Sessions are keyed by **git root**, so they load from
-anywhere inside the repo; every session carries a use count and
+for the lazy case. Sessions are keyed by **git root** (or a marker
+directory, or your home), so they load from anywhere inside the project; every session carries a use count and
 last-used / updated / created times.
 
 ![The picker showing sessions for all projects](assets/picker.png)
@@ -183,8 +183,6 @@ Details that matter:
   automatically loaded. You can start a new session with <key>`. `<key>` is
   whatever you mapped to `<cmd>SessionMgr new<cr>`, else `:SessionMgr new`.
   To opt out, set `autosave = false` or start nvim with a file.
-
-  ![Plain nvim in a project with an autosave.vim: the saved file is open and a notice says the last autosaved session was loaded and that a new one starts with the new-session key](docs/media/autoload.png)
 
 - `:SessionMgr new` starts empty. It asks about unsaved buffers and running
   terminals first (`write all & clear`, `discard & clear`; cancel keeps
@@ -388,6 +386,10 @@ require("session-mgr").setup {
   -- start screen never overwrites it. Leaves the active session alone.
   autosave = true,
   autosave_interval = 300, -- seconds; 0 = only on exit and before a load
+  -- Starting nvim with no files in a project that has an autosave.vim:
+  -- "prompt" asks first (default is No), "always" loads it without asking,
+  -- false never offers it. Needs autosave = true.
+  autoload = "prompt",
   -- Re-save the ACTIVE session on exit and before switching to another one.
   -- Never creates a session by itself.
   resave_active = false,
@@ -407,10 +409,32 @@ require("session-mgr").setup {
   },
   -- Reopen nvim-tree after saving if it was open.
   reopen_after_save = true,
+  -- Which project a directory belongs to: the git root, else the nearest
+  -- parent holding one of `markers`, else `fallback`.
   project = {
-    -- true: key sessions by the git root. false: always by the cwd.
+    -- true: look for a git root first. false: skip git and go to the markers.
     git_root = true,
     git_timeout_ms = 500,
+    -- Drop one of these into a directory (a `.session-root` file is enough)
+    -- to make it a project. The search stops at your home directory.
+    markers = { ".hg", ".session-root" },
+    -- Where to go when neither git nor a marker matches. "home": your home
+    -- directory. "cwd": the current directory.
+    fallback = "home",
+  },
+  -- Buffers that never count as "a file is open" and never get autosaved
+  -- over, such as the message editor `git commit` starts. Patterns are Lua
+  -- patterns matched against the full buffer name.
+  ignore = {
+    filetypes = { "gitcommit", "gitrebase", "gitconfig", "hgcommit", "svn", "crontab" },
+    patterns = {
+      "COMMIT_EDITMSG$",
+      "MERGE_MSG$",
+      "TAG_EDITMSG$",
+      "git%-rebase%-todo$",
+      "addp%-hunk%-edit%.diff$",
+      "/%.git/",
+    },
   },
   picker = {
     -- false = follow 'winborder' (falls back to "rounded" when that is empty).

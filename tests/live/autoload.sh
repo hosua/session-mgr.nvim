@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Live check (real config, throwaway sessions dir, never run in CI): quitting
-# writes autosave.vim, a plain `nvim` autoloads it with the hint message,
-# <leader>sn starts a new empty session, and `nvim file` does not autoload.
-# Also covers <leader>sL with no autosave and no default session.
+# writes autosave.vim; a plain `nvim` asks y/N before loading it (y loads and
+# shows the hint, Enter leaves nvim empty); <leader>sn starts a new empty
+# session; `nvim file` does not ask; `nvim .git/COMMIT_EDITMSG` (what
+# `git commit` runs) neither asks nor touches autosave.vim. Also covers
+# <leader>sL with no autosave and no default session.
 set -uo pipefail
 export LIVE_ISOLATE="sessions"
 # shellcheck source=/dev/null
@@ -10,6 +12,7 @@ source "${LIVE_LIB:-${HOME}/.config/nvim/.claude/skills/nvim-create-and-integrat
 rc=0
 
 live_setup
+git init -q "${LIVE_PROJ}"
 echo alpha >a.txt
 echo bravo >b.txt
 
@@ -33,15 +36,33 @@ else
     rc=1
 fi
 
-echo "-- run 2: plain nvim autoloads, then <leader>sn"
+echo "-- run 2: plain nvim asks; y loads, then <leader>sn"
 live_nvim 140 32
 sleep 1
-smoke_expect 'Last autosaved session was automatically loaded' || rc=1
+smoke_expect 'Load your last autosaved session' || rc=1
+smoke_expect 'Why +git root' || rc=1
+smoke_expect 'Session +autosave.vim' || rc=1
+smoke_expect 'Saved +' || rc=1
+smoke_reject 'alpha' || rc=1
+smoke_keys y
+sleep 1
+smoke_expect 'Loaded autosave \(git root ' || rc=1
 smoke_expect 'start a new session with <leader>sn' || rc=1
 smoke_expect 'alpha' || rc=1
-smoke_reject 'Loaded autosave' || rc=1
 smoke_type ' sn'
 smoke_expect 'New session: nothing open. Save it with <leader>ss' || rc=1
+smoke_reject 'alpha' || rc=1
+smoke_reject 'E[0-9]+:' || rc=1
+smoke_keys ':qa!' Enter
+sleep 1
+
+echo "-- run 2b: plain nvim asks; Enter (the default) leaves nvim empty"
+live_nvim 140 32
+sleep 1
+smoke_expect 'Load your last autosaved session' || rc=1
+smoke_keys Enter
+sleep 1
+smoke_expect 'Autosave not loaded. Load it later with <leader>sL' || rc=1
 smoke_reject 'alpha' || rc=1
 smoke_reject 'E[0-9]+:' || rc=1
 smoke_keys ':qa!' Enter
@@ -55,6 +76,22 @@ smoke_reject 'automatically loaded' || rc=1
 smoke_reject 'E[0-9]+:' || rc=1
 smoke_keys ':qa!' Enter
 sleep 1
+
+echo "-- run 4: nvim .git/COMMIT_EDITMSG (as git commit does) neither asks nor writes autosave.vim"
+before=$(sha256sum "${LIVE_TMP}"/data/nvim/sessions/*/autosave.vim)
+echo "fix: something" >.git/COMMIT_EDITMSG
+live_nvim 140 32 .git/COMMIT_EDITMSG
+sleep 1
+smoke_reject 'Load your last autosaved session' || rc=1
+smoke_keys ':qa!' Enter
+sleep 1
+after=$(sha256sum "${LIVE_TMP}"/data/nvim/sessions/*/autosave.vim)
+if [ "${before}" = "${after}" ]; then
+    echo "  ok    autosave.vim untouched by a COMMIT_EDITMSG run"
+else
+    echo "  FAIL  autosave.vim changed after a COMMIT_EDITMSG run"
+    rc=1
+fi
 
 live_teardown
 exit "${rc}"

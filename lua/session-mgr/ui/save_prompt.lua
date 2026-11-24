@@ -45,12 +45,14 @@ function M.open()
   local width = math.min(cfg.save_prompt.width, ui.editor().width - 6)
   local list_h = math.max(1, math.min(cfg.save_prompt.max_list_height, math.max(#rows, 1)))
   local box = ui.centered(width, list_h + 3) -- input (1) + its border share (2) + list
+  -- Titles share the popup width with " 10 of 10 saved for ": the path gives way.
+  local desc = require("session-mgr.project").describe(project, nil, width - 4 - #" 10 of 10 saved for ")
 
   local s = { state = save_model.new { rows = rows, text = prefill, default_name = cfg.default_name, height = list_h } }
   S = s
   s.list = ui.open {
     rect = { row = box.row + 3, col = box.col, width = width, height = list_h },
-    title = (" %d saved for %s "):format(#rows, project.label),
+    title = (" %d saved for %s "):format(#rows, desc),
     footer = FOOTER,
     enter = false,
     focusable = false,
@@ -63,8 +65,8 @@ function M.open()
     end
     local out = save_model.render(s.state, os.time(), width)
     ui.paint(s.list, out)
-    local title = s.state.query == "" and (" %d saved for %s "):format(#rows, project.label)
-      or (" %d of %d saved for %s "):format(out.count, #rows, project.label)
+    local title = s.state.query == "" and (" %d saved for %s "):format(#rows, desc)
+      or (" %d of %d saved for %s "):format(out.count, #rows, desc)
     vim.api.nvim_win_set_config(s.list.win, { title = title, title_pos = "center" })
     if s.input and float.is_open(s.input) and ui.has_border(s.input) then
       vim.api.nvim_win_set_config(s.input.win, { footer = out.status, footer_pos = "right" })
@@ -91,7 +93,7 @@ function M.open()
 
   s.input = input.open {
     rect = { row = box.row, col = box.col, width = width, height = 1 },
-    title = (" Save session for %s "):format(project.label),
+    title = (" Save session for %s "):format(desc),
     text = prefill,
     suffix = ".vim",
     zindex = 75,
@@ -123,7 +125,7 @@ function M.open()
           {
             { "  " },
             { name .. ".vim", "SessionMgrDefault" },
-            { "  already exists in " .. project.label, "SessionMgrDim" },
+            { "  already exists in " .. desc, "SessionMgrDim" },
           },
         },
         choices = { { key = "o", label = "overwrite it", value = true, danger = true } },

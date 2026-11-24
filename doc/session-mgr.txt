@@ -7,6 +7,11 @@ Commands, keys and options are documented in README.md. In short:
 :SessionMgr procs           open the Processes tab
 :checkhealth session-mgr    check Neovim, popup.nvim, plenary.nvim and storage
 
+A project is the git root, else the nearest parent with a marker file
+(`.hg`, `.session-root`), else your home directory. A plain `nvim` in a
+project with an autosave.vim asks y/N before loading it (option `autoload`).
+A parent of your home (`/`, `/home`) asks once before it may hold a session.
+
 Requires popup.nvim (floats, confirm dialog, key help) and plenary.nvim.
 
  vim:tw=78:ft=help:norl:

@@ -8,9 +8,9 @@ mkdir -p "$SMOKE_ROOT/work"; echo hi >"$SMOKE_ROOT/work/a.txt"
 rc=0
 smoke_start 110 30 env SMOKE_ROOT="$SMOKE_ROOT" nvim --clean -u tests/smoke/init.lua
 smoke_keys ' ss'
-smoke_expect 'Save session for work' || rc=1
+smoke_expect 'Save session for marker' || rc=1
 smoke_expect '│\.vim' || rc=1                 # the suffix shows even with nothing typed
-smoke_expect '5 saved for work' || rc=1
+smoke_expect '5 saved for marker' || rc=1
 smoke_expect 'type a name' || rc=1
 smoke_type co
 smoke_expect '│co\.vim' || rc=1

@@ -16,6 +16,10 @@ M.defaults = {
   -- start screen never overwrites it. Leaves the active session alone.
   autosave = true,
   autosave_interval = 300, -- seconds; 0 = only on exit and before a load
+  -- Starting nvim with no files in a project that has an autosave.vim:
+  -- "prompt" asks first (default is No), "always" loads it without asking,
+  -- false never offers it. Needs autosave = true.
+  autoload = "prompt",
   -- Re-save the ACTIVE session on exit and before switching to another one.
   -- Never creates a session by itself.
   resave_active = false,
@@ -35,10 +39,32 @@ M.defaults = {
   },
   -- Reopen nvim-tree after saving if it was open.
   reopen_after_save = true,
+  -- Which project a directory belongs to: the git root, else the nearest
+  -- parent holding one of `markers`, else `fallback`.
   project = {
-    -- true: key sessions by the git root. false: always by the cwd.
+    -- true: look for a git root first. false: skip git and go to the markers.
     git_root = true,
     git_timeout_ms = 500,
+    -- Drop one of these into a directory (a `.session-root` file is enough)
+    -- to make it a project. The search stops at your home directory.
+    markers = { ".hg", ".session-root" },
+    -- Where to go when neither git nor a marker matches. "home": your home
+    -- directory. "cwd": the current directory.
+    fallback = "home",
+  },
+  -- Buffers that never count as "a file is open" and never get autosaved
+  -- over, such as the message editor `git commit` starts. Patterns are Lua
+  -- patterns matched against the full buffer name.
+  ignore = {
+    filetypes = { "gitcommit", "gitrebase", "gitconfig", "hgcommit", "svn", "crontab" },
+    patterns = {
+      "COMMIT_EDITMSG$",
+      "MERGE_MSG$",
+      "TAG_EDITMSG$",
+      "git%-rebase%-todo$",
+      "addp%-hunk%-edit%.diff$",
+      "/%.git/",
+    },
   },
   picker = {
     -- false = follow 'winborder' (falls back to "rounded" when that is empty).
@@ -116,6 +142,7 @@ end
 --- Options whose default is `false` meaning "unset" accept another type.
 local OPTIONAL = {
   sessionoptions = "table",
+  autoload = "string",
   ["picker.border"] = { "string", "table" },
   ["hints.load_key"] = "string",
   ["hooks.pre_save"] = "function",
@@ -186,6 +213,30 @@ function M.resolve(opts)
         problems[#problems + 1] = ("procs.%s must be >= 0, got %s"):format(k, pc[k])
         pc[k] = M.defaults.procs[k]
       end
+    end
+  end
+  if cfg.autoload ~= false and cfg.autoload ~= "prompt" and cfg.autoload ~= "always" then
+    if type(cfg.autoload) == "string" then
+      problems[#problems + 1] = ("autoload must be prompt|always|false, got %q"):format(cfg.autoload)
+    end
+    cfg.autoload = M.defaults.autoload
+  end
+  if type(cfg.project) == "table" then
+    local pj = cfg.project
+    if type(pj.fallback) == "string" and pj.fallback ~= "home" and pj.fallback ~= "cwd" then
+      problems[#problems + 1] = ("project.fallback must be home|cwd, got %s"):format(pj.fallback)
+      pj.fallback = M.defaults.project.fallback
+    end
+  end
+  for _, g in ipairs { { "project", "markers" }, { "ignore", "filetypes" }, { "ignore", "patterns" } } do
+    local list = type(cfg[g[1]]) == "table" and cfg[g[1]][g[2]]
+    local all_strings = type(list) == "table"
+      and vim.iter(list):all(function(v)
+        return type(v) == "string"
+      end)
+    if type(list) == "table" and not all_strings then
+      problems[#problems + 1] = ("%s.%s must be a list of strings"):format(g[1], g[2])
+      cfg[g[1]][g[2]] = vim.deepcopy(M.defaults[g[1]][g[2]])
     end
   end
   local every = cfg.autosave_interval

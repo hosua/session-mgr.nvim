@@ -45,6 +45,37 @@ describe("config", function()
     eq({}, select(2, config.resolve { autosave_interval = 60 }))
   end)
 
+  it("validates autoload, project.fallback and the string lists", function()
+    local cfg, problems
+    eq("prompt", config.resolve().autoload)
+    for _, v in ipairs { "prompt", "always", false } do
+      eq({}, select(2, config.resolve { autoload = v }))
+    end
+    quiet(function()
+      cfg, problems = config.resolve { autoload = "sometimes" }
+    end)
+    eq({ 'autoload must be prompt|always|false, got "sometimes"' }, problems)
+    eq("prompt", cfg.autoload)
+    quiet(function()
+      problems = select(2, config.resolve { autoload = true })
+    end)
+    eq({ "autoload must be string or false, got boolean" }, problems)
+
+    quiet(function()
+      cfg, problems = config.resolve { project = { fallback = "root" } }
+    end)
+    eq({ "project.fallback must be home|cwd, got root" }, problems)
+    eq("home", cfg.project.fallback)
+    eq({}, select(2, config.resolve { project = { fallback = "cwd", markers = { ".git-ish" } } }))
+
+    quiet(function()
+      cfg, problems = config.resolve { project = { markers = { 1 } }, ignore = { patterns = { {} } } }
+    end)
+    eq({ "project.markers must be a list of strings", "ignore.patterns must be a list of strings" }, problems)
+    eq({ ".hg", ".session-root" }, cfg.project.markers)
+    eq("COMMIT_EDITMSG$", cfg.ignore.patterns[1])
+  end)
+
   it("reports a wrong type with the dotted option name", function()
     local problems
     quiet(function()

@@ -6,6 +6,9 @@ local paths = require "session-mgr.paths"
 local state = require "session-mgr.state"
 local store = require "session-mgr.store"
 local validate = require "session-mgr.validate"
+local approved = require "session-mgr.approved"
+local ignore = require "session-mgr.ignore"
+local project_mod = require "session-mgr.project"
 
 local M = {}
 local TITLE = "session-mgr"
@@ -91,13 +94,22 @@ end
 --- @return boolean ok, string|nil err
 function M.save(project, raw_name, opts)
   local cfg = config.get()
+  local background = opts and opts.background or false
+  if project.kind == "ancestor_pending" then
+    local why = ("%s is a parent of your home and has not been approved for sessions"):format(
+      paths.tilde(project.root, vim.uv.os_homedir())
+    )
+    if not background then
+      notify("Not saved: " .. why, vim.log.levels.WARN)
+    end
+    return false, why
+  end
   local name, err = validate.name(raw_name)
   if not name then
     notify("Not saved: " .. err, vim.log.levels.ERROR)
     return false, err
   end
   local file = paths.session_file(cfg.root, project.key, name)
-  local background = opts and opts.background or false
   local ctx = { project = project, name = name, file = file, autosave = background }
   if vim.fn.mkdir(vim.fs.dirname(file), "p") == 0 then
     err = "cannot create " .. vim.fs.dirname(file)
@@ -132,7 +144,13 @@ function M.save(project, raw_name, opts)
   end
   emit("post_save", ctx)
   if not (opts and opts.silent) then
-    notify(("Saved %s\n%s"):format(vim.fn.fnamemodify(file, ":~"), reload_hint(name)))
+    notify(
+      ("Saved %s\nProject: %s\n%s"):format(
+        vim.fn.fnamemodify(file, ":~"),
+        project_mod.describe(project),
+        reload_hint(name)
+      )
+    )
   end
   return true
 end
@@ -149,11 +167,17 @@ function M.resave_active()
   return (M.save(project, name, { silent = true }))
 end
 
---- True when some listed buffer is a file. A start screen or an empty buffer
---- is not worth a session, and saving it would replace a good autosave.vim.
+--- True when some listed buffer is a file. A start screen, an empty buffer
+--- or an ignored one (a COMMIT_EDITMSG) is not worth a session, and saving
+--- it would replace a good autosave.vim.
 local function has_files()
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-    if vim.bo[buf].buflisted and vim.bo[buf].buftype == "" and vim.api.nvim_buf_get_name(buf) ~= "" then
+    if
+      vim.bo[buf].buflisted
+      and vim.bo[buf].buftype == ""
+      and vim.api.nvim_buf_get_name(buf) ~= ""
+      and not ignore.is_ignored(buf)
+    then
       return true
     end
   end
@@ -161,13 +185,49 @@ local function has_files()
 end
 
 --- Write the current layout to this project's "autosave" session if
---- `autosave` is on and a file is open.
+--- `autosave` is on, a file is open, and the current buffer is not an ignored
+--- one. Never asks anything: a parent of $HOME that is not approved is skipped.
 --- @return boolean saved
 function M.autosave()
-  if not (config.get().autosave and has_files()) then
+  if not (config.get().autosave and has_files() and not ignore.is_ignored(0)) then
     return false
   end
-  return (M.save(require("session-mgr.project").detect(), M.AUTOSAVE_NAME, { silent = true, background = true }))
+  local project = project_mod.detect()
+  if project.kind == "ancestor_pending" then
+    return false
+  end
+  return (M.save(project, M.AUTOSAVE_NAME, { silent = true, background = true }))
+end
+
+--- Make sure `project` may hold sessions, then call `cb(project)`. Anything
+--- but an unapproved parent of $HOME calls back at once. For that one, ask
+--- (once ever per directory: a yes is written to approved_roots.json); a no
+--- calls `cb(nil)`.
+--- @param project SessionMgrProject
+--- @param cb fun(project: SessionMgrProject|nil)
+function M.ensure_approved(project, cb)
+  if project.kind ~= "ancestor_pending" then
+    return cb(project)
+  end
+  local cfg = config.get()
+  local home = vim.uv.os_homedir()
+  require("session-mgr.prompt").ask_approve({ project = project, sessions_root = cfg.root, home = home }, function(yes)
+    local where = paths.tilde(project.root, home)
+    if not yes then
+      approved.decline(project.root)
+      notify(("No session for %s in this nvim run: autosave and autoload skip it"):format(where))
+      return cb(nil)
+    end
+    local ok, err = approved.add(cfg.root, project.root)
+    if not ok then
+      notify(
+        ("Not approved: could not write %s: %s"):format(approved.file(cfg.root), tostring(err)),
+        vim.log.levels.ERROR
+      )
+      return cb(nil)
+    end
+    cb(project_mod.detect(project.root))
+  end)
 end
 
 --- Which session `load!` (no name) opens in `project`: autosave.vim while
@@ -187,9 +247,9 @@ function M.default_target(project)
     return cfg.default_name
   end
   if cfg.autosave then
-    return nil, ("No %q or %q session for %s"):format(M.AUTOSAVE_NAME, cfg.default_name, project.label)
+    return nil, ("No %q or %q session for %s"):format(M.AUTOSAVE_NAME, cfg.default_name, project_mod.describe(project))
   end
-  local why = ("No %q session for %s"):format(cfg.default_name, project.label)
+  local why = ("No %q session for %s"):format(cfg.default_name, project_mod.describe(project))
   if has(M.AUTOSAVE_NAME) then
     why = why .. (". Autosave is off, so autosave.vim is skipped: :SessionMgr load %s"):format(M.AUTOSAVE_NAME)
   end
@@ -242,7 +302,7 @@ function M.load(project, name, on_done, opts)
   local cfg = config.get()
   local file = paths.session_file(cfg.root, project.key, name)
   if not vim.uv.fs_stat(file) then
-    notify(("No session named %q for %s"):format(name, project.label), vim.log.levels.WARN)
+    notify(("No session named %q for %s"):format(name, project_mod.describe(project)), vim.log.levels.WARN)
     return on_done(false)
   end
   local ctx = { project = project, name = name, file = file }
@@ -256,7 +316,7 @@ function M.load(project, name, on_done, opts)
     -- The layout a load is about to wipe goes to autosave.vim, so a wrong
     -- load can be undone. Not when loading this project's autosave: that
     -- would overwrite the very file being loaded.
-    if not (name == M.AUTOSAVE_NAME and project.key == require("session-mgr.project").detect().key) then
+    if not (name == M.AUTOSAVE_NAME and project.key == project_mod.detect().key) then
       M.autosave()
     end
     emit("pre_load", ctx)
@@ -272,7 +332,7 @@ function M.load(project, name, on_done, opts)
     state.set_active(project, name)
     emit("post_load", ctx)
     if not (opts and opts.silent) then
-      notify(("Loaded %s (%s)"):format(name, project.label))
+      notify(("Loaded %s (%s)"):format(name, project_mod.describe(project)))
     end
     on_done(true)
   end
@@ -323,28 +383,63 @@ local function fresh_start()
   return vim.api.nvim_win_get_config(0).relative == ""
 end
 
---- Load this project's autosave.vim when autosave is on and nvim was started
---- without files, then say how to start fresh instead.
---- @return boolean loaded
-function M.autoload()
+--- Offer this project's autosave.vim once nvim has started without files.
+--- `autoload = "prompt"` asks first (default No), `"always"` loads it, and
+--- false or autosave off do nothing. Nothing is offered while an ignored
+--- buffer is open, or in a parent of $HOME you have not approved (it only
+--- asks to approve one that already holds an autosave.vim). Never loads
+--- without a yes. `on_done(true)` means the session was loaded.
+--- @param on_done fun(loaded: boolean)|nil
+function M.autoload(on_done)
+  on_done = on_done or function() end
   local cfg = config.get()
-  if not (cfg.autosave and fresh_start()) then
-    return false
+  if not (cfg.autosave and cfg.autoload and fresh_start()) or ignore.any_open() then
+    return on_done(false)
   end
-  local project = require("session-mgr.project").detect()
-  if not store.exists(cfg.root, project.key, M.AUTOSAVE_NAME) then
-    return false
+  local project = project_mod.detect()
+  if
+    not store.exists(cfg.root, project.key, M.AUTOSAVE_NAME)
+    or (project.kind == "ancestor_pending" and approved.is_declined(project.root))
+  then
+    return on_done(false)
   end
-  local loaded = false
-  M.load(project, M.AUTOSAVE_NAME, function(ok)
-    loaded = ok
-  end, { silent = true })
-  if loaded then
-    notify(
-      ("Last autosaved session was automatically loaded. You can start a new session with %s"):format(key_or_cmd "new")
-    )
+
+  local function load(p)
+    M.load(p, M.AUTOSAVE_NAME, function(ok)
+      if ok then
+        notify(
+          ("Loaded autosave (%s). You can start a new session with %s"):format(
+            project_mod.describe(p),
+            key_or_cmd "new"
+          )
+        )
+      end
+      on_done(ok)
+    end, { silent = true })
   end
-  return loaded
+
+  M.ensure_approved(project, function(p)
+    if not p or not fresh_start() then
+      return on_done(false)
+    end
+    if cfg.autoload == "always" then
+      return load(p)
+    end
+    local saved = store.read(cfg.root, p.key, p).sessions[M.AUTOSAVE_NAME]
+    require("session-mgr.prompt").ask_autoload({
+      project = p,
+      name = M.AUTOSAVE_NAME,
+      saved = saved and saved.updated,
+      now = os.time(),
+      home = vim.uv.os_homedir(),
+    }, function(yes)
+      if yes and fresh_start() then
+        return load(p)
+      end
+      notify(("Autosave not loaded. Load it later with %s"):format(key_or_cmd "load!"))
+      on_done(false)
+    end)
+  end)
 end
 
 return M
