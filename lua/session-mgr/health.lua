@@ -21,9 +21,12 @@ function M.check()
     end
   end
   if vim.fn.executable "git" == 1 then
-    h.ok "git found (sessions are keyed by the git root)"
+    h.ok "git found (a git root is the first choice for a project)"
   else
-    h.warn("git not found: every directory is its own project", { "Install git, or set project.git_root = false" })
+    h.warn(
+      "git not found: projects come from markers, else your home",
+      { "Install git, or set project.git_root = false" }
+    )
   end
 
   h.start "session-mgr: storage"
@@ -73,7 +76,7 @@ function M.check()
   elseif migrate.has_run(root) then
     h.ok("legacy sessions already imported (" .. paths.tilde(root .. "/" .. migrate.MARKER, vim.env.HOME) .. ")")
   else
-    local actions, skipped = migrate.plan(root, require("session-mgr.project").detect, cfg.default_name)
+    local actions, skipped = migrate.plan(root, require("session-mgr.project").detect_legacy, cfg.default_name)
     h.info(("%d legacy session(s) will be imported on first use"):format(#actions))
     for _, a in ipairs(actions) do
       h.info(("  %s -> %s / %s"):format(vim.fs.basename(a.from), a.project.label, a.name))

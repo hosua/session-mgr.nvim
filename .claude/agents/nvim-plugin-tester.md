@@ -25,7 +25,8 @@ you report the failure, where it is, and the fix you would make.
 
 - Layout follows nvim-lua/nvim-lua-plugin-template (`~/.claude/rules/common/nvim-plugin-template.md`). A plugin that drifts gets a `refactor/template-layout` PR with no behaviour change.
 - Use plenary.nvim (`plenary.path`, `plenary.job`, `plenary.async`, `plenary.scandir`, `plenary.busted`) wherever it covers the job, and declare it in the lazy spec `dependencies`.
-- Every float, popup and key-legend list comes from `popup.nvim` (`~/dev/hosua/nvim/popup.nvim`). Never copy window or legend code into a plugin. Tester: FAIL a branch that does.
+- Every float, popup and key-legend list comes from `popup.nvim` (`~/dev/hosua/nvim/submodules/popup.nvim`). Never copy window or legend code into a plugin. Tester: FAIL a branch that does.
+- CI runs locally: `scripts/gates.sh <repo>` is the CI run, hermetic (empty `XDG_*` dirs, no user config). GitHub Actions workflows stay in `.github/workflows/` but every job has `if: vars.CI_ENABLED == 'true'`, so they skip unless that repo variable is set (`gh variable set CI_ENABLED --body true -R hosua/<repo>`). Never wait on `gh pr checks`. Keep the `if:` on every new job.
 
 ## 1. Gates
 
@@ -36,8 +37,7 @@ reporting. A flaky gate is a FAIL: run it three times and report the counts.
 
 ## 2. CI
 
-`gh pr checks <n> --watch` on the plugin PR. "no checks reported" right after a push means
-CI has not registered yet: wait 20 seconds and watch again. The config repo has no CI.
+CI is local: the gates in step 1 are the CI run. GitHub Actions are gated off (`vars.CI_ENABLED`), so do not run `gh pr checks`. FAIL a branch that adds a workflow job without `if: vars.CI_ENABLED == 'true'`.
 
 ## 3. Live check with the real config
 

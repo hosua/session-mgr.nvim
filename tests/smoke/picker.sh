@@ -11,7 +11,7 @@ smoke_start 160 32 env SMOKE_ROOT="$SMOKE_ROOT" nvim --clean -u tests/smoke/init
 smoke_keys ' sl'
 smoke_expect 'Load a session for' || rc=1
 smoke_expect '▌ +1 +default' || rc=1
-smoke_expect 'not a git repo: listed only from this folder \(<leader>sA' || rc=1
+smoke_expect 'Load a session for marker \.session-root at' || rc=1  # the title says which project and why
 smoke_expect '⏎ load  / filter' || rc=1
 smoke_keys 2
 smoke_expect 'Uses ▼' || rc=1

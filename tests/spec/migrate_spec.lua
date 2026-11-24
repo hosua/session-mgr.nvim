@@ -26,7 +26,7 @@ local function legacy_world()
   legacy(base .. "/gone")
   project.clear_cache()
   local detect = function(cwd)
-    return project.detect(cwd, { git_root = true, git_timeout_ms = 2000 })
+    return project.detect(cwd, { git_root = true, git_timeout_ms = 2000, markers = {}, fallback = "cwd" })
   end
   return root, detect, repo, plain, base
 end

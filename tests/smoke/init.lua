@@ -4,6 +4,7 @@ local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h")
 vim.opt.runtimepath:prepend(root)
 for _, p in ipairs {
   vim.env.POPUP_DIR or "",
+  vim.fn.expand "~/dev/hosua/nvim/submodules/popup.nvim",
   vim.fn.expand "~/dev/hosua/nvim/popup.nvim",
   vim.fn.expand "~/dev/popup.nvim",
 } do
@@ -31,6 +32,7 @@ local function seed(dir, names, is_git)
   end
 end
 local here = vim.uv.fs_realpath(vim.env.SMOKE_ROOT .. "/work")
+vim.fn.writefile({}, here .. "/.session-root") -- a project of its own, not the home fallback
 seed(here, { "default", "abc", "cool", "cooli", "coolio" }, false)
 seed("/srv/other-repo", { "cool", "zeta" }, true)
 vim.cmd.cd(here)

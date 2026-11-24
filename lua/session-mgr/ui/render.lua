@@ -225,7 +225,8 @@ function M.render(state, now, opts)
   -- Outside git a project is just "this folder": say so where it is read,
   -- under the list, instead of stretching the footer.
   out.chrome_bottom = 0
-  if not state.project.is_git and state.scope == "project" then
+  local kind = state.project.kind
+  if not state.project.is_git and kind ~= "home" and kind ~= "marker" and state.scope == "project" then
     local key = opts.all_key or ":SessionMgr all"
     Line(row, out).add("", nil).done()
     Line(row + 1, out)
@@ -277,9 +278,9 @@ function M.title(state, opts)
   if state.scope == "all" then
     return " Showing your saved sessions for all projects "
   end
-  local p = state.project
-  local who = p.is_git and p.label or paths.display_path(p.root, opts and opts.home, 40)
-  return (" Load a session for %s "):format(who)
+  return (" Load a session for %s "):format(
+    require("session-mgr.project").describe(state.project, opts and opts.home, 40)
+  )
 end
 
 --- Key hints as { text, hl } chunks, the shape nvim_open_win's `footer` takes.

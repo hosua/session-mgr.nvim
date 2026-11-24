@@ -4,8 +4,8 @@ Named, per-project Neovim sessions with a floating picker.
 
 Save as many sessions per project as you like, load them from a sortable,
 filterable, mouse-friendly popup, and keep a one-keystroke `default` session
-for the lazy case. Sessions are keyed by **git root**, so they load from
-anywhere inside the repo; every session carries a use count and
+for the lazy case. Sessions are keyed by **git root** (or a marker
+directory, or your home), so they load from anywhere inside the project; every session carries a use count and
 last-used / updated / created times.
 
 ![The picker showing sessions for all projects](assets/picker.png)
@@ -31,6 +31,8 @@ last-used / updated / created times.
 - [Keymaps](#keymaps)
 - [Configuration](#configuration)
 - [How projects and sessions are identified](#how-projects-and-sessions-are-identified)
+  - [Parents of your home directory](#parents-of-your-home-directory)
+  - [Ignored buffers](#ignored-buffers)
 - [Data on disk](#data-on-disk)
 - [Highlight groups](#highlight-groups)
 - [Events and hooks](#events-and-hooks)
@@ -41,7 +43,7 @@ last-used / updated / created times.
 
 - Neovim **0.11+** (developed on 0.12). Uses float titles/footers, inline
   virtual text, `vim.system`, `vim.uv`, `vim.fs`.
-- `git` (optional): without it every directory is its own project.
+- `git` (optional): without it projects come from `project.markers`, else your home directory.
 - [popup.nvim](https://github.com/hosua/popup.nvim) (every float, the confirm dialog and the key-help screen) and
   [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) (declared for popup.nvim and the test runner).
 
@@ -175,16 +177,24 @@ Details that matter:
   so autosave.vim is skipped: :SessionMgr load autosave` when that file
   exists). An explicit name such as `:SessionMgr load default` loads exactly
   that session.
-- At startup the project's `autosave.vim` is loaded for you when nvim starts
+- At startup the plugin offers this project's `autosave.vim` when nvim starts
   with no file arguments, no named or modified buffer, no active session and
   no float focused. It waits for `VimEnter` and a UI, so a start screen draws
-  first and a headless run never autoloads. It happens once per Neovim, and
-  instead of "Loaded autosave" you get `Last autosaved session was
-  automatically loaded. You can start a new session with <key>`. `<key>` is
-  whatever you mapped to `<cmd>SessionMgr new<cr>`, else `:SessionMgr new`.
-  To opt out, set `autosave = false` or start nvim with a file.
+  first and a headless run never offers it. It happens once per Neovim. What
+  you see depends on `autoload`:
+  - `"prompt"` (default): a y/N modal asks first. It shows Project, Why (how
+    the project was found), Session and Saved (when `autosave.vim` was
+    written). `y` loads it, and you get `Loaded autosave (<project>). You can
+    start a new session with <key>`. `n`, Enter, Esc and `q` all start empty,
+    with a toast `Autosave not loaded. Load it later with <key>`.
+  - `"always"`: loads it without asking.
+  - `false`: never offers it.
 
-  ![Plain nvim in a project with an autosave.vim: the saved file is open and a notice says the last autosaved session was loaded and that a new one starts with the new-session key](docs/media/autoload.png)
+  In both toasts `<key>` is whatever you mapped to `<cmd>SessionMgr new<cr>`
+  (or `<cmd>SessionMgr load!<cr>` for the second one), else the command. To
+  opt out entirely, set `autosave = false` or start nvim with a file.
+
+  ![The startup modal "Load your last autosaved session?" with the rows Project, Why, Session and Saved, and the legend y load it, n no start empty, q cancel](docs/media/autoload.png)
 
 - `:SessionMgr new` starts empty. It asks about unsaved buffers and running
   terminals first (`write all & clear`, `discard & clear`; cancel keeps
@@ -388,6 +398,10 @@ require("session-mgr").setup {
   -- start screen never overwrites it. Leaves the active session alone.
   autosave = true,
   autosave_interval = 300, -- seconds; 0 = only on exit and before a load
+  -- Starting nvim with no files in a project that has an autosave.vim:
+  -- "prompt" asks first (default is No), "always" loads it without asking,
+  -- false never offers it. Needs autosave = true.
+  autoload = "prompt",
   -- Re-save the ACTIVE session on exit and before switching to another one.
   -- Never creates a session by itself.
   resave_active = false,
@@ -407,10 +421,32 @@ require("session-mgr").setup {
   },
   -- Reopen nvim-tree after saving if it was open.
   reopen_after_save = true,
+  -- Which project a directory belongs to: the git root, else the nearest
+  -- parent holding one of `markers`, else `fallback`.
   project = {
-    -- true: key sessions by the git root. false: always by the cwd.
+    -- true: look for a git root first. false: skip git and go to the markers.
     git_root = true,
     git_timeout_ms = 500,
+    -- Drop one of these into a directory (a `.session-root` file is enough)
+    -- to make it a project. The search stops at your home directory.
+    markers = { ".hg", ".session-root" },
+    -- Where to go when neither git nor a marker matches. "home": your home
+    -- directory. "cwd": the current directory.
+    fallback = "home",
+  },
+  -- Buffers that never count as "a file is open" and never get autosaved
+  -- over, such as the message editor `git commit` starts. Patterns are Lua
+  -- patterns matched against the full buffer name.
+  ignore = {
+    filetypes = { "gitcommit", "gitrebase", "gitconfig", "hgcommit", "svn", "crontab" },
+    patterns = {
+      "COMMIT_EDITMSG$",
+      "MERGE_MSG$",
+      "TAG_EDITMSG$",
+      "git%-rebase%-todo$",
+      "addp%-hunk%-edit%.diff$",
+      "/%.git/",
+    },
   },
   picker = {
     -- false = follow 'winborder' (falls back to "rounded" when that is empty).
@@ -501,22 +537,74 @@ default is used.
 
 ## How projects and sessions are identified
 
-- A **project** is the git top level of the current directory
-  (`git rev-parse --show-toplevel`), or the current directory itself outside
-  git (or with `project.git_root = false`). `<leader>sl` in
-  `~/dev/mach/sysconfig/terraform` and in `~/dev/mach` list the same sessions.
+- A **project** is found in this order:
+  1. The git top level of the current directory
+     (`git rev-parse --show-toplevel`). `project.git_root = false` skips this
+     step.
+  2. The nearest parent directory (the current one included) that holds one
+     of the `project.markers`, by default `.hg` and `.session-root`. Drop an
+     empty `.session-root` file into any directory to make it a project. The
+     search never goes above `$HOME`.
+  3. Your home directory. Set `project.fallback = "cwd"` to get the old
+     behaviour back, where a directory outside git is its own project.
+
+  `<leader>sl` in `~/dev/mach/sysconfig/terraform` and in `~/dev/mach` list
+  the same sessions.
+- The save and load messages name how the project was found (`git root`,
+  `marker .hg at ...`, `home ~ (no git repo here)`), so a surprise is easy to
+  trace.
 - Projects are keyed by their **full path**, never by folder name, so two
   folders called `build` never share sessions. The picker shows the folder
   name plus a shortened path (`~/path/to/long…/projectA`).
-- Outside git a project is just "this folder": `<leader>sl` only lists it
-  from there, and the picker says so. `<leader>sA` lists and loads it from
-  anywhere, because each session restores its own directory (`curdir`).
+- Every directory under your home that has no git root or marker shares the
+  home project, so `<leader>sl` lists the same sessions from all of them.
+  `<leader>sA` lists and loads any project from anywhere, because each
+  session restores its own directory (`curdir`).
+- Sessions saved earlier under a non-git directory stay listed under
+  `<leader>sA` and still load, but they are no longer detected automatically
+  from that directory, because it now resolves to the home project. Set
+  `project.fallback = "cwd"` if you want them found again.
 - Each git **worktree** is its own project. That is deliberate: its files
   live at different paths.
 - The **active session** is the one this Neovim instance last saved or
   loaded. It is marked `●`, pre-fills the save popup, and is what
   `resave_active` re-saves. It is per instance and not stored. `autosave`
   does not change it.
+
+### Parents of your home directory
+
+In `/`, `/home` or any other parent of `$HOME`, nothing falls back to your
+home directory. A session there would cover half the machine, so the plugin
+asks first.
+
+- The first save, load or new in such a directory asks `Create a session for
+  ... ?`. `y` records the directory in `<sessions root>/approved_roots.json`,
+  and it is never asked again.
+- `n` (also Enter, Esc and `q`) means no session for that run. Autosave and
+  the startup question skip the directory, and a manual save asks again.
+- The exit autosave never asks. In an unapproved parent of `$HOME` it
+  writes nothing.
+- At startup the plugin asks only when an `autosave.vim` already exists
+  there.
+
+The session lives under this user's data dir. `root` and `sudo` have their
+own `$HOME` and their own `stdpath("data")`, so they will not find it unless
+they point `root` at the same sessions root.
+
+### Ignored buffers
+
+The `ignore` option lists filetypes and Lua patterns (matched against the
+full buffer name) for buffers that never decide anything about a session.
+The defaults cover git commit message buffers (`COMMIT_EDITMSG`, `MERGE_MSG`,
+`TAG_EDITMSG`, rebase todo files), anything under `.git/`, and similar
+editors for hg, svn and cron.
+
+- An ignored buffer does not count as an open file, so it alone never
+  triggers an autosave.
+- The exit autosave is skipped while the current buffer is an ignored one.
+  Running `git commit` no longer overwrites `autosave.vim` with the commit
+  message window.
+- The startup question never appears while an ignored buffer is open.
 
 ## Data on disk
 
@@ -528,6 +616,7 @@ default is used.
     index.json                                metrics for this project
   .migrated-legacy-v1.json                    what the one-time import did
   %home%me%dev%mach.vim                       legacy file, left untouched
+  approved_roots.json                         parents of $HOME you said yes to
 ```
 
 `index.json`:
@@ -645,13 +734,20 @@ active session.
 
 - **`:SessionMgr` is not a command.** With `defaults.lazy = true` a spec
   needs a trigger: `cmd = { "SessionMgr" }`.
-- **Nothing is autosaved, and the last session does not come back at
-  startup, until I run a command.** The plugin is only loaded on the first
-  `:SessionMgr`. Add `event = "VeryLazy"` to the spec.
-- **The last session did not load at startup.** Autoload needs `autosave =
-  true`, an `autosave.vim` for this project, and a start with no file
-  arguments, no named or modified buffer, no active session and a UI (not
-  headless).
+- **Nothing is autosaved, and the startup question never appears, until I
+  run a command.** The plugin is only loaded on the first `:SessionMgr`. Add
+  `event = "VeryLazy"` to the spec.
+- **The startup question did not appear.** It needs `autosave = true`,
+  `autoload` not `false`, an `autosave.vim` for this project, no ignored
+  buffer open, and a start with no file arguments, no named or modified
+  buffer, no active session and a UI (not headless). In a parent of `$HOME`
+  it also needs an earlier `y` (see [Parents of your home
+  directory](#parents-of-your-home-directory)).
+- **I answered n and want the autosave back.** Run `:SessionMgr load!` or
+  `<leader>sL`. The toast after `n` names the key.
+- **My sessions from a non-git folder are gone from `<leader>sl`.** That
+  folder now belongs to the home project. Find them with `<leader>sA`, or set
+  `project.fallback = "cwd"`.
 - **Edits to the plugin do nothing.** `:checkhealth session-mgr` shows the
   loaded path; it should be `~/dev/session-mgr.nvim`. Check that checkout is
   on the branch you expect.

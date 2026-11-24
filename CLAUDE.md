@@ -27,7 +27,7 @@ dispatches:
 3. On PASS the doc-writer updates the README using the images the tester
    listed in `docs/media/CAPTURES.md`.
 4. The main session reruns `scripts/gates.sh` (the README is checked by a
-   spec), pushes, waits for CI, and merges without asking: plugin PR first,
+   spec), pushes, runs the local gates as CI, and merges without asking: plugin PR first,
    then the config PR. A tester PASS is the approval.
 5. After merging: `git switch main && git pull --ff-only` in both repos.
 
@@ -50,7 +50,8 @@ All under `~/.config/nvim/.claude/skills/nvim-create-and-integrate-plugin/script
 
 - Layout follows nvim-lua/nvim-lua-plugin-template (`~/.claude/rules/common/nvim-plugin-template.md`). A plugin that drifts gets a `refactor/template-layout` PR with no behaviour change.
 - Use plenary.nvim (`plenary.path`, `plenary.job`, `plenary.async`, `plenary.scandir`, `plenary.busted`) wherever it covers the job, and declare it in the lazy spec `dependencies`.
-- Every float, popup and key-legend list comes from `popup.nvim` (`~/dev/hosua/nvim/popup.nvim`). Never copy window or legend code into a plugin. Tester: FAIL a branch that does.
+- Every float, popup and key-legend list comes from `popup.nvim` (`~/dev/hosua/nvim/submodules/popup.nvim`). Never copy window or legend code into a plugin. Tester: FAIL a branch that does.
+- CI runs locally: `scripts/gates.sh <repo>` is the CI run, hermetic (empty `XDG_*` dirs, no user config). GitHub Actions workflows stay in `.github/workflows/` but every job has `if: vars.CI_ENABLED == 'true'`, so they skip unless that repo variable is set (`gh variable set CI_ENABLED --body true -R hosua/<repo>`). Never wait on `gh pr checks`. Keep the `if:` on every new job.
 
 ## Rules that do not bend
 

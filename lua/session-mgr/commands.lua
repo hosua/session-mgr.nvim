@@ -25,14 +25,18 @@ M.subcommands = {
     if bang or #args > 0 then
       return sm.save(table.concat(args, " "))
     end
-    require("session-mgr.ui.save_prompt").open()
+    sm.with_project(function()
+      require("session-mgr.ui.save_prompt").open()
+    end)
   end,
   load = function(args, bang)
     local sm = require "session-mgr"
     if bang or #args > 0 then
       return sm.load(table.concat(args, " "))
     end
-    require("session-mgr.ui.picker").open "project"
+    sm.with_project(function()
+      require("session-mgr.ui.picker").open "project"
+    end)
   end,
   all = function()
     require("session-mgr.ui.picker").open "all"

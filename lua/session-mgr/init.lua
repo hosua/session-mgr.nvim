@@ -52,10 +52,11 @@ function M.toggle_autosave()
   return M.set_autosave(not require("session-mgr.config").get().autosave)
 end
 
---- Load autosave.vim once nvim has entered and a UI is attached. Waiting
---- for VimEnter lets a start screen draw first (the load replaces it), and
---- a headless run never gets a UI, so scripts are left alone. Its own
---- augroup, since setup() clears "session-mgr" and would drop the wait.
+--- Offer autosave.vim once nvim has entered and a UI is attached (a y/N
+--- question by default, see `autoload`). Waiting for VimEnter lets a start
+--- screen draw first (a load replaces it), and a headless run never gets a
+--- UI, so scripts are left alone. Its own augroup, since setup() clears
+--- "session-mgr" and would drop the wait.
 function M.arm_autoload()
   local group = vim.api.nvim_create_augroup("session-mgr-autoload", { clear = true })
   local function run()
@@ -80,6 +81,7 @@ end
 function M.setup(opts)
   local cfg = require("session-mgr.config").resolve(opts)
   migrated = false
+  require("session-mgr.approved").reset_declined()
   local group = vim.api.nvim_create_augroup("session-mgr", { clear = true })
   -- Always registered, since autosave can be switched on later with
   -- set_autosave(). Each save checks its own option.
@@ -93,7 +95,7 @@ function M.setup(opts)
     end,
   })
   M.set_autosave(cfg.autosave, { quiet = true })
-  if cfg.autosave and not autoload_armed then
+  if cfg.autosave and cfg.autoload and not autoload_armed then
     autoload_armed = true
     M.arm_autoload()
   end
@@ -106,6 +108,19 @@ end
 
 local function current_project()
   return require("session-mgr.project").detect()
+end
+
+--- Run `cb(project)` for this directory's project. In a parent of $HOME that
+--- is not approved yet it asks first (see session.ensure_approved), so `cb`
+--- may run after you answer, or never.
+--- @param cb fun(project: SessionMgrProject)
+function M.with_project(cb)
+  M.ensure_migrated()
+  require("session-mgr.session").ensure_approved(current_project(), function(project)
+    if project then
+      cb(project)
+    end
+  end)
 end
 
 --- Import legacy sessions once per nvim instance (and, thanks to the marker
@@ -121,7 +136,7 @@ function M.ensure_migrated()
   if migrate.has_run(cfg.root) then
     return
   end
-  local imported, problems = migrate.run(cfg.root, require("session-mgr.project").detect, cfg.default_name)
+  local imported, problems = migrate.run(cfg.root, require("session-mgr.project").detect_legacy, cfg.default_name)
   local notify = require("session-mgr.session").notify
   if #imported > 0 then
     local lines = { ("Imported %d legacy session(s); the original files were left untouched:"):format(#imported) }
@@ -136,12 +151,23 @@ function M.ensure_migrated()
 end
 
 --- Save the current project's session `name`; nil/"" means the default session.
+--- In an unapproved parent of $HOME this returns false at once and saves
+--- after you answer yes to the question it asks.
 --- @param name string|nil
 --- @return boolean ok, string|nil err
 function M.save(name)
   M.ensure_migrated()
   local cfg = require("session-mgr.config").get()
-  return require("session-mgr.session").save(current_project(), (name and name ~= "") and name or cfg.default_name)
+  local session = require "session-mgr.session"
+  local result = { false, "waiting for approval" }
+  session.ensure_approved(current_project(), function(project)
+    if project then
+      result = { session.save(project, (name and name ~= "") and name or cfg.default_name) }
+    else
+      result = { false, "not approved" }
+    end
+  end)
+  return result[1], result[2]
 end
 
 --- Load the current project's session `name`. nil/"" picks one: autosave
@@ -151,23 +177,28 @@ end
 function M.load(name, on_done)
   M.ensure_migrated()
   local session = require "session-mgr.session"
-  local project = current_project()
-  if name and name ~= "" then
-    return session.load(project, name, on_done)
-  end
-  local target, why = session.default_target(project)
-  if not target then
-    session.notify(why, vim.log.levels.WARN)
-    return (on_done or function() end)(false)
-  end
-  session.load(project, target, on_done)
+  session.ensure_approved(current_project(), function(project)
+    if not project then
+      return (on_done or function() end)(false)
+    end
+    if name and name ~= "" then
+      return session.load(project, name, on_done)
+    end
+    local target, why = session.default_target(project)
+    if not target then
+      session.notify(why, vim.log.levels.WARN)
+      return (on_done or function() end)(false)
+    end
+    session.load(project, target, on_done)
+  end)
 end
 
 --- Start an empty session in this project. See session.new.
 --- @param on_done fun(ok: boolean)|nil
 function M.new(on_done)
-  M.ensure_migrated()
-  require("session-mgr.session").new(on_done)
+  M.with_project(function()
+    require("session-mgr.session").new(on_done)
+  end)
 end
 
 --- @return boolean ok, string|nil err

@@ -13,9 +13,11 @@ vim.notify = function(m)
   msgs[#msgs + 1] = m
 end
 
---- A fresh project dir with three files, made the cwd.
+--- A fresh project dir with three files, made the cwd. The .session-root
+--- marker makes it its own project (it is not under git and not under home).
 local function workspace()
   local dir = vim.uv.fs_realpath(tmpdir())
+  vim.fn.writefile({}, dir .. "/.session-root")
   for _, f in ipairs { "a.txt", "b.txt", "c.txt" } do
     vim.fn.writefile({ f }, dir .. "/" .. f)
   end
@@ -512,6 +514,9 @@ end)
 
 describe("autoload at startup", function()
   local session = require "session-mgr.session"
+  local prompt = require "session-mgr.prompt"
+  local approved = require "session-mgr.approved"
+
   local function setup(opts)
     workspace()
     local root = tmpdir()
@@ -535,45 +540,125 @@ describe("autoload at startup", function()
     vim.g.mapleader = leader
     assert(okk, err)
   end
+  --- Replace the two questions; `answers.autoload` / `answers.approve` are
+  --- what "the user" says. Records what was asked in `asked`.
+  local function with_answers(answers, fn)
+    local saved = { prompt.ask_autoload, prompt.ask_approve }
+    local asked = { autoload = {}, approve = {} }
+    prompt.ask_autoload = function(info, cb)
+      asked.autoload[#asked.autoload + 1] = info
+      cb(answers.autoload)
+    end
+    prompt.ask_approve = function(info, cb)
+      asked.approve[#asked.approve + 1] = info
+      cb(answers.approve)
+    end
+    local okk, err = pcall(fn, asked)
+    prompt.ask_autoload, prompt.ask_approve = saved[1], saved[2]
+    assert(okk, err)
+  end
+  local function autoload()
+    local result
+    session.autoload(function(loaded)
+      result = loaded
+    end)
+    return result
+  end
 
-  it("loads autosave.vim and names the user's key for a new session", function()
+  it("asks first, says which project and why, and loads on y", function()
+    setup()
+    autosaved()
+    with_answers({ autoload = true }, function(asked)
+      eq(true, autoload())
+      eq(1, #asked.autoload)
+      local info = asked.autoload[1]
+      eq({ "marker", ".session-root", "autosave" }, { info.project.kind, info.project.marker, info.name })
+      ok(info.saved and info.saved > 0, "saved time is passed")
+    end)
+    eq({ "b.txt" }, open_names())
+    ok(msgs[#msgs]:find("Loaded autosave (marker .session-root at", 1, true), msgs[#msgs])
+  end)
+
+  it("names the user's key for a new session after a y", function()
     setup()
     autosaved()
     with_map(" sn", function()
-      eq(true, session.autoload())
+      with_answers({ autoload = true }, function()
+        eq(true, autoload())
+      end)
     end)
-    eq({ "b.txt" }, open_names())
-    eq({
-      "Last autosaved session was automatically loaded. You can start a new session with <leader>sn",
-    }, msgs)
+    ok(msgs[#msgs]:find("start a new session with <leader>sn", 1, true), msgs[#msgs])
   end)
 
-  it("names :SessionMgr new when no key is mapped", function()
+  it("leaves nvim empty on n and says how to load it later", function()
     setup()
     autosaved()
-    eq(true, session.autoload())
-    ok(msgs[#msgs]:find("start a new session with :SessionMgr new", 1, true), msgs[#msgs])
+    with_answers({ autoload = false }, function(asked)
+      eq(false, autoload())
+      eq(1, #asked.autoload)
+    end)
+    eq({}, open_names())
+    eq(nil, sm.active())
+    eq({ "Autosave not loaded. Load it later with :SessionMgr load!" }, msgs)
+  end)
+
+  it("autoload = always loads without asking", function()
+    setup { autoload = "always" }
+    autosaved()
+    with_answers({ autoload = false }, function(asked)
+      eq(true, autoload())
+      eq(0, #asked.autoload)
+    end)
+    eq({ "b.txt" }, open_names())
+  end)
+
+  it("autoload = false never asks", function()
+    setup { autoload = false }
+    autosaved()
+    with_answers({ autoload = true }, function(asked)
+      eq(false, autoload())
+      eq(0, #asked.autoload)
+    end)
+    eq({}, open_names())
   end)
 
   it("does nothing with autosave off, a file open, or no autosave.vim", function()
     setup()
-    eq(false, session.autoload()) -- no autosave.vim yet
-    autosaved()
-    vim.cmd "edit a.txt"
-    eq(false, session.autoload())
-    eq({ "a.txt" }, open_names())
-    vim.cmd "silent! %bwipeout!"
-    require("session-mgr").set_autosave(false, { quiet = true })
-    eq(false, session.autoload())
-    eq({}, open_names())
+    with_answers({ autoload = true }, function(asked)
+      eq(false, autoload()) -- no autosave.vim yet
+      autosaved()
+      vim.cmd "edit a.txt"
+      eq(false, autoload())
+      eq({ "a.txt" }, open_names())
+      vim.cmd "silent! %bwipeout!"
+      require("session-mgr").set_autosave(false, { quiet = true })
+      eq(false, autoload())
+      eq({}, open_names())
+      eq(0, #asked.autoload)
+    end)
   end)
 
   it("does nothing once a session is active", function()
     setup()
     autosaved()
     require("session-mgr.state").set_active(project.detect(), "other")
-    eq(false, session.autoload())
+    with_answers({ autoload = true }, function(asked)
+      eq(false, autoload())
+      eq(0, #asked.autoload)
+    end)
     eq({}, open_names())
+  end)
+
+  it("never asks while an ignored buffer is open", function()
+    setup()
+    autosaved()
+    vim.cmd "enew"
+    vim.bo.filetype = "gitcommit"
+    with_answers({ autoload = true }, function(asked)
+      eq(false, autoload())
+      eq(0, #asked.autoload)
+    end)
+    vim.cmd "silent! %bwipeout!"
   end)
 
   it("headless setup never autoloads", function()
@@ -581,6 +666,174 @@ describe("autoload at startup", function()
     autosaved()
     vim.wait(50)
     eq({}, open_names())
+  end)
+end)
+
+describe("ignored buffers", function()
+  local session = require "session-mgr.session"
+  it("a lone COMMIT_EDITMSG does not count as a file and never overwrites autosave.vim", function()
+    local dir = workspace()
+    local root = tmpdir()
+    require("session-mgr").setup { root = root, autosave_interval = 0 }
+    vim.cmd "edit b.txt"
+    eq(true, session.autosave())
+    local file = paths.session_file(root, project.detect().key, "autosave")
+    local before = table.concat(vim.fn.readfile(file), "\n")
+    vim.cmd "silent! %bwipeout!"
+    vim.fn.mkdir(dir .. "/.git", "p")
+    vim.cmd("edit " .. dir .. "/.git/COMMIT_EDITMSG")
+    eq(false, session.autosave())
+    eq(before, table.concat(vim.fn.readfile(file), "\n"))
+    vim.cmd "silent! %bwipeout!"
+  end)
+
+  it("skips the autosave while the current buffer is ignored, even with real files open", function()
+    local dir = workspace()
+    local root = tmpdir()
+    require("session-mgr").setup { root = root, autosave_interval = 0 }
+    vim.cmd "edit a.txt"
+    vim.cmd("split " .. dir .. "/MERGE_MSG")
+    eq(false, session.autosave())
+    vim.cmd "wincmd p"
+    eq(true, session.autosave())
+    vim.cmd "silent! %bwipeout!"
+  end)
+end)
+
+describe("parents of home", function()
+  local session = require "session-mgr.session"
+  local prompt = require "session-mgr.prompt"
+  local approved = require "session-mgr.approved"
+
+  --- cwd = a parent of a fake $HOME, holding one file, with a fresh sessions root.
+  local function world()
+    local base = vim.uv.fs_realpath(tmpdir())
+    local parent, home = base .. "/users", base .. "/users/me"
+    vim.fn.mkdir(home, "p")
+    vim.fn.writefile({ "x" }, parent .. "/x.txt")
+    local saved_home = vim.env.HOME
+    vim.env.HOME = home
+    vim.cmd "silent! %bwipeout!"
+    vim.cmd.cd(parent)
+    project.clear_cache()
+    msgs = {}
+    local root = tmpdir()
+    require("session-mgr").setup { root = root, autosave_interval = 0 }
+    return {
+      parent = parent,
+      root = root,
+      restore = function()
+        vim.env.HOME = saved_home
+        project.clear_cache()
+        approved.reset_declined()
+      end,
+    }
+  end
+  local function stubbed(w, answers, fn)
+    local saved = { prompt.ask_autoload, prompt.ask_approve }
+    local asked = { autoload = {}, approve = {} }
+    prompt.ask_autoload = function(info, cb)
+      asked.autoload[#asked.autoload + 1] = info
+      cb(answers.autoload)
+    end
+    prompt.ask_approve = function(info, cb)
+      asked.approve[#asked.approve + 1] = info
+      cb(answers.approve)
+    end
+    local okk, err = pcall(fn, asked)
+    prompt.ask_autoload, prompt.ask_approve = saved[1], saved[2]
+    w.restore()
+    assert(okk, err)
+  end
+  --- An autosave.vim that exists for the (still unapproved) parent.
+  local function seed_autosave(w)
+    ok(approved.add(w.root, w.parent))
+    vim.cmd "edit x.txt"
+    eq(true, session.autosave())
+    vim.cmd "silent! %bwipeout!"
+    require("session-mgr.state").clear()
+    vim.fn.delete(approved.file(w.root))
+    project.clear_cache()
+    approved.reset_declined()
+    eq("ancestor_pending", project.detect().kind)
+    msgs = {}
+  end
+
+  it("a manual save asks, and a no writes nothing", function()
+    local w = world()
+    stubbed(w, { approve = false }, function(asked)
+      vim.cmd "edit x.txt"
+      eq(false, (sm.save "work"))
+      eq(1, #asked.approve)
+      eq(w.parent, asked.approve[1].project.root)
+      eq(w.root, asked.approve[1].sessions_root)
+      eq({}, approved.read(w.root))
+      eq(false, vim.uv.fs_stat(paths.session_file(w.root, project.detect().key, "work")) ~= nil)
+      eq(true, approved.is_declined(w.parent))
+      ok(msgs[#msgs]:find("No session for", 1, true), msgs[#msgs])
+    end)
+  end)
+
+  it("a yes saves, persists the approval, and is never asked again", function()
+    local w = world()
+    stubbed(w, { approve = true }, function(asked)
+      vim.cmd "edit x.txt"
+      eq(true, (sm.save "work"))
+      eq({ w.parent }, approved.read(w.root))
+      eq("approved", project.detect().kind)
+      ok(vim.uv.fs_stat(paths.session_file(w.root, project.detect().key, "work")))
+      ok(msgs[#msgs]:find("approved directory", 1, true), msgs[#msgs])
+      eq(true, (sm.save "again"))
+      eq(1, #asked.approve)
+    end)
+  end)
+
+  it("the exit autosave never asks and skips an unapproved directory", function()
+    local w = world()
+    stubbed(w, { approve = true }, function(asked)
+      vim.cmd "edit x.txt"
+      eq(false, session.autosave())
+      eq(0, #asked.approve)
+      eq(nil, vim.uv.fs_stat(w.root .. "/" .. paths.escape(w.parent)))
+      ok(approved.add(w.root, w.parent))
+      eq(true, session.autosave())
+    end)
+  end)
+
+  it("startup asks to approve only when an autosave.vim exists, then asks to load", function()
+    local w = world()
+    stubbed(w, { approve = true, autoload = true }, function(asked)
+      local done
+      session.autoload(function(v)
+        done = v
+      end)
+      eq({ false, 0, 0 }, { done, #asked.approve, #asked.autoload }) -- nothing saved here yet
+      seed_autosave(w)
+      session.autoload(function(v)
+        done = v
+      end)
+      eq({ true, 1, 1 }, { done, #asked.approve, #asked.autoload })
+      eq("approved directory", require("session-mgr.project").why(asked.autoload[1].project))
+      eq({ w.parent }, approved.read(w.root))
+      eq({ "x.txt" }, open_names())
+    end)
+  end)
+
+  it("a no at startup skips autoload for the run and does not fall back to home", function()
+    local w = world()
+    stubbed(w, { approve = false, autoload = true }, function(asked)
+      seed_autosave(w)
+      local done
+      session.autoload(function(v)
+        done = v
+      end)
+      session.autoload(function(v)
+        done = v
+      end)
+      eq({ false, 1, 0 }, { done, #asked.approve, #asked.autoload })
+      eq({}, open_names())
+      eq("ancestor_pending", project.detect().kind)
+    end)
   end)
 end)
 
