@@ -1,6 +1,6 @@
-# docs/tapes/autoload.tape: plain nvim in a project with autosave.vim shows the startup y/N question.
+# docs/tapes/autoload.tape: plain nvim in a project with autosave.vim shows the startup menu (Start empty highlighted, keys in the border).
 # Regenerate:  bash docs/tapes/capture.sh autoload
-# Rows shown:  startup autoload message (docs/tapes/FEATURES.md)
+# Rows shown:  startup autoload question (docs/tapes/FEATURES.md)
 Require bash
 Set Shell "bash"
 Set FontSize 15

@@ -58,6 +58,12 @@ M.subcommands = {
     end
     sm.set_autosave(arg == "on")
   end,
+  settings = function(args)
+    if #args > 0 then
+      return notify("Usage: :SessionMgr settings", vim.log.levels.ERROR)
+    end
+    require("session-mgr.ui.settings").open()
+  end,
   delete = function(args)
     if #args ~= 1 then
       return notify("Usage: :SessionMgr delete {name}", vim.log.levels.ERROR)

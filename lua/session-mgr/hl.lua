@@ -24,6 +24,7 @@ M.LINKS = {
   SessionMgrCursorLine = "CursorLine",
   SessionMgrCursorBar = "Function",
   SessionMgrHover = "Visual",
+  SessionMgrSelect = "PmenuSel",
   SessionMgrScopeOn = "TabLineSel",
   SessionMgrScopeOff = "TabLine",
   SessionMgrSuffix = "Comment",

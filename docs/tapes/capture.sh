@@ -4,8 +4,9 @@
 #   picker-autosave-on.tape   -> picker-autosave-on.png
 #   picker-autosave-off.tape  -> picker-autosave-off.png
 #   autoload.tape             -> autoload.png
+#   settings.tape             -> settings.png
 #   new-session.tape          -> new-session.png
-# Usage: bash docs/tapes/capture.sh [picker-autosave-on|picker-autosave-off|autoload|new-session]
+# Usage: bash docs/tapes/capture.sh [picker-autosave-on|picker-autosave-off|autoload|settings|new-session]
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../.." && pwd)"
@@ -18,7 +19,7 @@ command -v vhs >/dev/null || {
 }
 
 cd "${REPO}"
-for tape in picker-autosave-on picker-autosave-off autoload new-session; do
+for tape in picker-autosave-on picker-autosave-off autoload settings new-session; do
     [ -z "${ONLY}" ] || [ "${ONLY}" = "${tape}" ] || continue
     # Fresh fixtures for every tape, so one run's saves never show in the next.
     rm -rf "${DEMO}"

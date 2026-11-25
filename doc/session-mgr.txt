@@ -5,13 +5,23 @@ Commands, keys and options are documented in README.md. In short:
 :SessionMgr save [name]     save a session for this project
 :SessionMgr load [name]     load one (no name opens the picker)
 :SessionMgr procs           open the Processes tab
+:SessionMgr settings        permanent options (autoload) and their source
 :checkhealth session-mgr    check Neovim, popup.nvim, plenary.nvim and storage
 
 A project is the git root, else the nearest parent with a marker file
 (`.hg`, `.session-root`), else your home directory. A plain `nvim` in a
-project with an autosave.vim asks y/N before loading it (option `autoload`).
-`n`, Enter, Esc and `q` start empty. `autoload = "always"` loads without asking
-and `false` never offers it.
+project with an autosave.vim asks before loading it (option `autoload`), with a
+menu: j/k move over "Load it" and "Start empty" (starts on the second), Enter
+picks the highlighted row, y loads, n starts empty, q and Esc start empty. Y
+(always load), N (never ask) and Shift+Enter (the highlighted row) also save
+the answer to <sessions root>/settings.json. Shift+Enter needs a terminal that
+reports it (kitty keyboard protocol; st and alacritty need a mapping); Y and N
+work everywhere. `autoload = "always"` loads without asking and `false` never
+offers it. A value in settings.json wins over "prompt" and "always" in setup();
+`false` (and `autosave = false`) stays off whatever the file says.
+:SessionMgr settings lists each option with its value and source: Enter cycles
+and saves, x resets (setup decides again), e edits the file, q closes.
+:checkhealth shows whether settings.json parses.
 Setting `project.fallback = "cwd"` makes a directory outside git its own project.
 A parent of your home (`/`, `/home`), or a directory you cannot read or write
 (`project.require_access`, default true), asks once before it may hold a
@@ -22,6 +32,7 @@ Buffers matching the `ignore` option (git commit messages and the like) do not
 count as open files: the exit autosave is skipped while one is current, and
 the startup question never appears with one open.
 
-Requires popup.nvim (floats, confirm dialog, key help) and plenary.nvim.
+Requires popup.nvim (floats, confirm menu, border legends, key help; the version
+with popup.confirm menu mode) and plenary.nvim.
 
  vim:tw=78:ft=help:norl:

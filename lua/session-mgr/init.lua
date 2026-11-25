@@ -82,6 +82,7 @@ function M.setup(opts)
   local cfg = require("session-mgr.config").resolve(opts)
   migrated = false
   require("session-mgr.approved").reset_declined()
+  require("session-mgr.settings").reset_warned()
   local group = vim.api.nvim_create_augroup("session-mgr", { clear = true })
   -- Always registered, since autosave can be switched on later with
   -- set_autosave(). Each save checks its own option.
@@ -95,7 +96,9 @@ function M.setup(opts)
     end,
   })
   M.set_autosave(cfg.autosave, { quiet = true })
-  if cfg.autosave and cfg.autoload and not autoload_armed then
+  -- The same call session.autoload makes: setup(autoload = false) or
+  -- autosave = false is the hard off switch, else settings.json decides.
+  if require("session-mgr.settings").effective "autoload" ~= "never" and not autoload_armed then
     autoload_armed = true
     M.arm_autoload()
   end
