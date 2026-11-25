@@ -18,7 +18,9 @@ M.defaults = {
   autosave_interval = 300, -- seconds; 0 = only on exit and before a load
   -- Starting nvim with no files in a project that has an autosave.vim:
   -- "prompt" asks first (default is No), "always" loads it without asking,
-  -- false never offers it. Needs autosave = true.
+  -- false never offers it. Needs autosave = true. A value saved in
+  -- settings.json (Y, N or `:SessionMgr settings`) wins over "prompt" and
+  -- "always"; false is the hard off switch and settings.json cannot undo it.
   autoload = "prompt",
   -- Re-save the ACTIVE session on exit and before switching to another one.
   -- Never creates a session by itself.

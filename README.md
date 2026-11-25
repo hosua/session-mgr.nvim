@@ -27,6 +27,7 @@ last-used / updated / created times.
 - [Quick start](#quick-start)
 - [Commands](#commands)
 - [Autosave](#autosave)
+- [Settings](#settings)
 - [Processes tab](#processes-tab)
 - [Keymaps](#keymaps)
 - [Configuration](#configuration)
@@ -44,8 +45,11 @@ last-used / updated / created times.
 - Neovim **0.11+** (developed on 0.12). Uses float titles/footers, inline
   virtual text, `vim.system`, `vim.uv`, `vim.fs`.
 - `git` (optional): without it projects come from `project.markers`, else your home directory.
-- [popup.nvim](https://github.com/hosua/popup.nvim) (every float, the confirm dialog and the key-help screen) and
-  [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) (declared for popup.nvim and the test runner).
+- [popup.nvim](https://github.com/hosua/popup.nvim) (every float, the confirm dialog and the key-help screen),
+  at a version with `popup.confirm.open { menu = true }`, `popup.legend.footer` and
+  `popup.list_menu` `border_legend` (the startup question and the settings menu use them;
+  `:checkhealth session-mgr` says when yours is too old), and
+  [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) (reads the small JSON files, and the test runner).
 
 ## Install
 
@@ -118,6 +122,7 @@ One command, with completion for subcommands and session names.
 | `:SessionMgr all` | Open the picker for all projects. |
 | `:SessionMgr procs` | Open the picker straight on the Processes tab. |
 | `:SessionMgr autosave [on\|off\|toggle]` | Switch [autosave](#autosave) for this Neovim. No argument toggles. |
+| `:SessionMgr settings` | Open the [settings](#settings) menu: the permanent options and where each value comes from. |
 | `:SessionMgr new` | Start an empty session: wipe every buffer, close other tabs and windows, clear the active session. Asks about unsaved buffers first. |
 | `:SessionMgr rename {old} {new}` | Rename; use count and times follow the session. Refuses to overwrite. |
 | `:SessionMgr delete {name}` | Delete the file and its record. No prompt (the picker's `d` asks). |
@@ -182,19 +187,33 @@ Details that matter:
   no float focused. It waits for `VimEnter` and a UI, so a start screen draws
   first and a headless run never offers it. It happens once per Neovim. What
   you see depends on `autoload`:
-  - `"prompt"` (default): a y/N modal asks first. It shows Project, Why (how
+  - `"prompt"` (default): a menu asks first. It shows Project, Why (how
     the project was found), Session and Saved (when `autosave.vim` was
-    written). `y` loads it, and you get `Loaded autosave (<project>). You can
-    start a new session with <key>`. `n`, Enter, Esc and `q` all start empty,
-    with a toast `Autosave not loaded. Load it later with <key>`.
+    written), a hint line, and two rows, `Load it` and `Start empty`. The
+    highlight starts on `Start empty`, so a stray Enter answers no. `j` and
+    `k` move it (nothing else does: arrows, `gg` and the mouse are put back).
+    The keys are in the bottom border:
+    - Enter picks the highlighted row.
+    - `y` loads and `n` starts empty, this time only.
+    - `Y` loads and `N` starts empty, and both are saved: `Y` sets `autoload`
+      to `"always"`, `N` to `"never"` (see [Settings](#settings)).
+    - Shift+Enter picks the highlighted row and saves that answer. It needs a
+      terminal that reports it: kitty keyboard protocol terminals do, st and
+      alacritty need a key mapping. `Y` and `N` work everywhere.
+    - `q` and Esc start empty without saving anything.
+
+    Loading gives `Loaded autosave (<project>). You can start a new session
+    with <key>`. Starting empty gives a toast `Autosave not loaded. Load it
+    later with <key>`. A saved answer adds a second line, `Autoload is now
+    "always". Change it with :SessionMgr settings`.
   - `"always"`: loads it without asking.
-  - `false`: never offers it.
+  - `"never"` (only from settings.json) or `false`: never offers it.
 
   In both toasts `<key>` is whatever you mapped to `<cmd>SessionMgr new<cr>`
   (or `<cmd>SessionMgr load!<cr>` for the second one), else the command. To
   opt out entirely, set `autosave = false` or start nvim with a file.
 
-  ![The startup modal "Load your last autosaved session?" with the rows Project, Why, Session and Saved, and the legend y load it, n no start empty, q cancel](docs/media/autoload.png)
+  ![The startup question "Load your last autosaved session?" with the rows Project, Why, Session and Saved, a hint line, the rows Load it and Start empty (highlighted), and the key legend in the bottom border](docs/media/autoload.png)
 
 - `:SessionMgr new` starts empty. It asks about unsaved buffers and running
   terminals first (`write all & clear`, `discard & clear`; cancel keeps
@@ -221,6 +240,41 @@ right after the `a` hint.
 
 ![The load picker with five sessions and the footer reading s autosave on, with on in green](docs/media/picker-autosave-on.png)
 ![The same picker after pressing s: the footer reads s autosave off, with off in yellow, and no toast covers the picker](docs/media/picker-autosave-off.png)
+
+## Settings
+
+A few options can be changed from inside nvim and are remembered: they live
+in `<root>/settings.json`, a JSON object beside `approved_roots.json`. Today
+there is one:
+
+| Option | Values | What it does |
+|---|---|---|
+| `autoload` | `"prompt"`, `"always"`, `"never"` | What a plain `nvim` does in a project that has an `autosave.vim`: ask, load it, or leave it. `"never"` means the question is never shown. |
+
+`:SessionMgr settings` opens a menu with each option, its value, and where the
+value comes from (`settings file` or `setup`). The keys are in the border:
+
+- Enter cycles the value and writes the file.
+- `x` resets the option: its key is removed from the file and `setup()` decides again.
+- `e` opens `settings.json` in a split for hand editing.
+- `j`/`k` move, `q` and Esc close.
+
+![The settings menu listing autoload = prompt (setup) with the key legend in the bottom border](docs/media/settings.png)
+
+How the two sources combine:
+
+- A key present in `settings.json` overrides the same option in `setup()`.
+  A missing key leaves it to `setup()`.
+- `setup { autoload = false }` and `autosave = false` are the hard off
+  switches. `settings.json` cannot turn the question back on, and the menu
+  says so (`setup, file ignored: setup() has autoload = false`).
+- Keys the plugin does not know are kept when the file is rewritten and
+  otherwise ignored. A known key with a value that is not allowed is ignored
+  with one warning.
+- A file that is not valid JSON, or not an object, is ignored with one
+  warning and is never overwritten by the menu or by `Y` and `N`. Fix it with
+  `e`, then reopen the menu. `:checkhealth session-mgr` shows the path and
+  whether it parses.
 
 ## Processes tab
 
@@ -400,7 +454,9 @@ require("session-mgr").setup {
   autosave_interval = 300, -- seconds; 0 = only on exit and before a load
   -- Starting nvim with no files in a project that has an autosave.vim:
   -- "prompt" asks first (default is No), "always" loads it without asking,
-  -- false never offers it. Needs autosave = true.
+  -- false never offers it. Needs autosave = true. A value saved in
+  -- settings.json (Y, N or `:SessionMgr settings`) wins over "prompt" and
+  -- "always"; false is the hard off switch and settings.json cannot undo it.
   autoload = "prompt",
   -- Re-save the ACTIVE session on exit and before switching to another one.
   -- Never creates a session by itself.
@@ -637,6 +693,7 @@ editors for hg, svn and cron.
   .migrated-legacy-v1.json                    what the one-time import did
   %home%me%dev%mach.vim                       legacy file, left untouched
   approved_roots.json                         directories you approved (parents of $HOME, no access)
+  settings.json                               options you changed in nvim (autoload), see Settings
 ```
 
 `index.json`:
@@ -709,6 +766,7 @@ never fire `ColorScheme`.
 | `SessionMgrCursorLine` | `CursorLine` | the selected row |
 | `SessionMgrCursorBar` | `Function` | the `▌` on the selected row |
 | `SessionMgrHover` | `Visual` | the row under the mouse |
+| `SessionMgrSelect` | `PmenuSel` | the highlighted row of the startup question |
 | `SessionMgrScopeOn` | `TabLineSel` | the active scope tab |
 | `SessionMgrScopeOff` | `TabLine` | the other scope tab |
 | `SessionMgrSuffix` | `Comment` | the fixed `.vim` in inputs |
@@ -758,13 +816,17 @@ active session.
   run a command.** The plugin is only loaded on the first `:SessionMgr`. Add
   `event = "VeryLazy"` to the spec.
 - **The startup question did not appear.** It needs `autosave = true`,
-  `autoload` not `false`, an `autosave.vim` for this project, no ignored
+  `autoload` neither `false` nor `"never"` (see `:SessionMgr settings`), an `autosave.vim` for this project, no ignored
   buffer open, and a start with no file arguments, no named or modified
   buffer, no active session and a UI (not headless). In a directory that
   needs approval it also needs an earlier `y` (see [Directories that need
   approval](#directories-that-need-approval)).
 - **I answered n and want the autosave back.** Run `:SessionMgr load!` or
   `<leader>sL`. The toast after `n` names the key.
+- **I pressed N and the question never comes back.** `N` saved `autoload =
+  "never"`. Run `:SessionMgr settings` and press `x` (or Enter to cycle).
+- **Shift+Enter does nothing.** Your terminal sends the same code as Enter.
+  Use `Y` or `N`, or enable the kitty keyboard protocol.
 - **My sessions from a non-git folder are gone from `<leader>sl`.** That
   folder now belongs to the home project. Find them with `<leader>sA`, or set
   `project.fallback = "cwd"`.

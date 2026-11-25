@@ -20,6 +20,19 @@ function M.check()
       h.error(mod .. ".nvim not found", { "Add it to the lazy spec dependencies of session-mgr.nvim" })
     end
   end
+  -- The startup question and the settings menu need these two popup.nvim features.
+  if pcall(require, "popup") then
+    local legend_ok = type(require("popup.legend").footer) == "function"
+    local menu_ok = type(require("popup.list_menu").border_footer) == "function"
+    if legend_ok and menu_ok then
+      h.ok "popup.nvim has confirm menus and border legends"
+    else
+      h.error(
+        "popup.nvim is too old: it lacks legend.footer or list_menu border_legend",
+        { "Update popup.nvim (the confirm-menu release)" }
+      )
+    end
+  end
   if vim.fn.executable "git" == 1 then
     h.ok "git found (a git root is the first choice for a project)"
   else
@@ -68,6 +81,22 @@ function M.check()
   end
   if #problems == 0 and projects > 0 then
     h.ok "every index.json parses"
+  end
+
+  local settings = require "session-mgr.settings"
+  local sfile = settings.read(root)
+  local spath = paths.tilde(settings.file(root), vim.env.HOME)
+  if sfile.status == "missing" then
+    h.info(spath .. " does not exist (nothing was remembered; setup() decides)")
+  elseif sfile.status == "ok" then
+    local n = vim.tbl_count(sfile.raw)
+    h.ok(("%s parses (%d key%s, %d in use)"):format(spath, n, n == 1 and "" or "s", vim.tbl_count(sfile.values)))
+  else
+    h.error(spath .. " is ignored: " .. sfile.err, { "Fix it with :SessionMgr settings, then e" })
+  end
+  for _, key in ipairs(settings.names()) do
+    local value, source, locked = settings.get(key, root)
+    h.info(("%s = %s (%s%s)"):format(key, value, source, locked and (", " .. locked) or ""))
   end
 
   local migrate = require "session-mgr.migrate"

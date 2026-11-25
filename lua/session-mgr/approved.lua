@@ -1,11 +1,10 @@
 --- Directories you said "yes" to when session-mgr asked whether a pending
 --- directory may hold a session: a parent of your home (/ or /home), or one
 --- you cannot read or write. Stored as a JSON array in
---- <config.root>/approved_roots.json, written atomically. A "no" is only
+--- <config.root>/approved_roots.json, written atomically (jsonfile.lua). A "no" is only
 --- remembered for this nvim run.
 local M = {}
 
-local uv = vim.uv
 local FILE = "approved_roots.json"
 
 --- @type table<string, boolean>
@@ -24,15 +23,8 @@ end
 --- @return string[]
 function M.read(root)
   root = root or require("session-mgr.config").get().root
-  local fd = uv.fs_open(M.file(root), "r", 420)
-  if not fd then
-    return {}
-  end
-  local stat = uv.fs_fstat(fd)
-  local data = stat and uv.fs_read(fd, stat.size, 0) or ""
-  uv.fs_close(fd)
-  local ok, list = pcall(vim.json.decode, data)
-  if not ok or type(list) ~= "table" or not vim.islist(list) then
+  local list = require("session-mgr.jsonfile").read(M.file(root))
+  if type(list) ~= "table" or not vim.islist(list) then
     return {}
   end
   local out = {}
@@ -71,25 +63,9 @@ function M.add(root, dir)
     return true
   end
   list[#list + 1] = dir
-  if vim.fn.mkdir(vim.fs.normalize(root), "p") == 0 and not uv.fs_stat(root) then
-    return false, "cannot create " .. root
-  end
-  local path = M.file(root)
-  local tmp = ("%s.%d.tmp"):format(path, uv.os_getpid())
-  local fd, err = uv.fs_open(tmp, "w", 420)
-  if not fd then
+  local ok, err = require("session-mgr.jsonfile").write(M.file(root), vim.json.encode(list))
+  if not ok then
     return false, err
-  end
-  local _, werr = uv.fs_write(fd, vim.json.encode(list), 0)
-  uv.fs_close(fd)
-  if werr then
-    uv.fs_unlink(tmp)
-    return false, werr
-  end
-  local renamed, rerr = uv.fs_rename(tmp, path)
-  if not renamed then
-    uv.fs_unlink(tmp)
-    return false, rerr
   end
   require("session-mgr.project").clear_cache()
   return true

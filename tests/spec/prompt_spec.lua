@@ -85,15 +85,86 @@ describe("approval question reasons", function()
   end)
 end)
 
+describe("autoload question layout", function()
+  it("ends with a blank line and the remember hint in the dim group", function()
+    local p = project.from_root("/home/me/dev/foo", true)
+    local lines = prompt.autoload_lines { project = p, name = "autosave", now = 1800000000, home = "/home/me" }
+    eq(6, #lines)
+    eq({}, lines[5])
+    eq({ { prompt.AUTOLOAD_HINT, "SessionMgrDim" } }, lines[6])
+    eq("  Shift+Enter, Y or N picks and never asks again (:SessionMgr settings to change).", text(lines)[6])
+  end)
+
+  it("lists every working key in the border legend, keys bright and text grey", function()
+    local chunks, width = prompt.autoload_footer()
+    local line = table.concat(vim.tbl_map(function(c)
+      return c[1]
+    end, chunks))
+    eq(" j/k move  ⏎ pick  ⇧⏎ pick+remember  y load  n skip  Y always  N never  q/Esc cancel ", line)
+    eq(vim.fn.strdisplaywidth(line), width)
+    for _, c in ipairs(chunks) do
+      ok(c[2] == "SessionMgrFooterKey" or c[2] == "SessionMgrFooter", c[2])
+    end
+  end)
+end)
+
 describe("prompt keys", function()
-  it("Enter, Esc and n all answer no; y answers yes", function()
+  require("session-mgr.config").resolve()
+  local function ask(keys)
+    local got
+    prompt.ask_autoload({
+      project = project.from_root("/home/me", false, "home"),
+      name = "autosave",
+      now = os.time(),
+    }, function(yes, remember)
+      got = { yes, remember }
+    end)
+    vim.api.nvim_feedkeys(vim.keycode(keys), "x", false)
+    vim.wait(200, function()
+      return got ~= nil
+    end)
+    return got
+  end
+
+  it("starts on Start empty, so Enter answers no and does not remember", function()
+    eq({ false, false }, ask "<CR>")
+  end)
+  it("k then Enter picks Load it; j and k stop at the ends", function()
+    eq({ true, false }, ask "k<CR>")
+    eq({ true, false }, ask "kkk<CR>")
+    eq({ false, false }, ask "kj<CR>")
+    eq({ false, false }, ask "jjj<CR>")
+  end)
+  it("y and n answer for this start only", function()
+    eq({ true, false }, ask "y")
+    eq({ false, false }, ask "n")
+  end)
+  it("Y and N answer and remember", function()
+    eq({ true, true }, ask "Y")
+    eq({ false, true }, ask "N")
+  end)
+  it("Shift+Enter picks the highlighted row and remembers", function()
+    eq({ false, true }, ask "<S-CR>")
+    eq({ true, true }, ask "k<S-CR>")
+  end)
+  it("q and Esc cancel without remembering", function()
+    eq({ false, false }, ask "q")
+    eq({ false, false }, ask "<Esc>")
+  end)
+  it("gg, G and the arrows do not move the selection", function()
+    eq({ false, false }, ask "gg<CR>")
+    eq({ false, false }, ask "<Up><Up><CR>")
+  end)
+end)
+
+describe("approval question keys", function()
+  it("Enter, Esc and n answer no; y answers yes", function()
     require("session-mgr.config").resolve()
     local function ask(keys)
       local answer
-      prompt.ask_autoload({
-        project = project.from_root("/home/me", false, "home"),
-        name = "autosave",
-        now = os.time(),
+      prompt.ask_approve({
+        project = project.from_root("/", false, "pending"),
+        sessions_root = "/tmp/x",
       }, function(yes)
         answer = yes
       end)

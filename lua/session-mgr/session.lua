@@ -8,6 +8,7 @@ local store = require "session-mgr.store"
 local validate = require "session-mgr.validate"
 local approved = require "session-mgr.approved"
 local ignore = require "session-mgr.ignore"
+local settings = require "session-mgr.settings"
 local project_mod = require "session-mgr.project"
 
 local M = {}
@@ -391,8 +392,10 @@ local function fresh_start()
 end
 
 --- Offer this project's autosave.vim once nvim has started without files.
---- `autoload = "prompt"` asks first (default No), `"always"` loads it, and
---- false or autosave off do nothing. Nothing is offered while an ignored
+--- What happens comes from settings.effective("autoload"): "prompt" asks
+--- first (default No), "always" loads it, "never" does nothing (so does
+--- setup() with autoload = false or autosave off). Y, N and Shift+Enter in
+--- the question save "always" or "never" to settings.json. Nothing is offered while an ignored
 --- buffer is open, or in a pending directory you have not approved (a parent
 --- of $HOME, or one you cannot read or write). It only asks to approve one
 --- that already holds an autosave.vim. Never loads
@@ -401,7 +404,8 @@ end
 function M.autoload(on_done)
   on_done = on_done or function() end
   local cfg = config.get()
-  if not (cfg.autosave and cfg.autoload and fresh_start()) or ignore.any_open() then
+  local mode = settings.effective "autoload"
+  if mode == "never" or not fresh_start() or ignore.any_open() then
     return on_done(false)
   end
   local project = project_mod.detect()
@@ -412,14 +416,15 @@ function M.autoload(on_done)
     return on_done(false)
   end
 
-  local function load(p)
+  -- `extra` is a second line for the message: what a remembered answer set.
+  local function load(p, extra)
     M.load(p, M.AUTOSAVE_NAME, function(ok)
       if ok then
         notify(
           ("Loaded autosave (%s). You can start a new session with %s"):format(
             project_mod.describe(p),
             key_or_cmd "new"
-          )
+          ) .. (extra and ("\n" .. extra) or "")
         )
       end
       on_done(ok)
@@ -430,7 +435,7 @@ function M.autoload(on_done)
     if not p or not fresh_start() then
       return on_done(false)
     end
-    if cfg.autoload == "always" then
+    if mode == "always" then
       return load(p)
     end
     local saved = store.read(cfg.root, p.key, p).sessions[M.AUTOSAVE_NAME]
@@ -440,11 +445,23 @@ function M.autoload(on_done)
       saved = saved and saved.updated,
       now = os.time(),
       home = vim.uv.os_homedir(),
-    }, function(yes)
-      if yes and fresh_start() then
-        return load(p)
+    }, function(yes, remember)
+      local extra
+      if remember then
+        local value = yes and "always" or "never"
+        local saved, err = settings.set("autoload", value)
+        if saved then
+          extra = ('Autoload is now "%s". Change it with :SessionMgr settings'):format(value)
+        else
+          notify("Could not save the answer: " .. tostring(err), vim.log.levels.ERROR)
+        end
       end
-      notify(("Autosave not loaded. Load it later with %s"):format(key_or_cmd "load!"))
+      if yes and fresh_start() then
+        return load(p, extra)
+      end
+      notify(
+        ("Autosave not loaded. Load it later with %s"):format(key_or_cmd "load!") .. (extra and ("\n" .. extra) or "")
+      )
       on_done(false)
     end)
   end)

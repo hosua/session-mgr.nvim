@@ -76,7 +76,12 @@ function M.confirm(opts)
   hl.apply()
   local f = require("popup.confirm").open(vim.tbl_extend("force", opts, {
     winhl = hl.WINHL,
-    hl = { key = "SessionMgrFooterKey", danger = "SessionMgrDanger", footer = "SessionMgrFooter" },
+    hl = {
+      key = "SessionMgrFooterKey",
+      danger = "SessionMgrDanger",
+      footer = "SessionMgrFooter",
+      select = "SessionMgrSelect",
+    },
   }))
   vim.bo[f.buf].filetype = "session-mgr"
   local border = M.border()
